@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Animation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        h1 {
+            text-align: center;
+        }
+        .form-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
+            max-width: 600px;
+        }
+        .form-container input, .form-container textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        .form-container button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .form-container button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Edit Animation</h1>
+    <div class="form-container">
+        <form id="editForm" action="" method="POST" enctype="multipart/form-data">
+            <input type="file" name="video" accept="video/mp4">
+            <input type="text" name="name" id="name" placeholder="Name of Exercise/Patient Ed Video" required>
+            <textarea name="voiceoverText" id="voiceoverText" placeholder="Voiceover Text (English)" required></textarea>
+            <input type="text" name="setsRepsDuration" id="setsRepsDuration" placeholder="Sets/Reps/Duration" required>
+            <input type="text" name="reminder" id="reminder" placeholder="Reminder" required>
+            <label><input type="checkbox" name="twoSided" id="twoSided"> Is this two-sided?</label>
+            <button type="submit">Update</button>
+        </form>
+    </div>
+
+    <script>
+        const path = window.location.pathname;
+        const id = path.split('/').pop();
+        document.getElementById('editForm').action = `/admin/update/${id}`;
+
+        fetch(`/api/animation/${id}`)
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('name').value = data.name;
+                document.getElementById('voiceoverText').value = data.voiceoverText;
+                document.getElementById('setsRepsDuration').value = data.setsRepsDuration;
+                document.getElementById('reminder').value = data.reminder;
+                document.getElementById('twoSided').checked = data.twoSided === 1;
+            });
+    </script>
+</body>
+</html>

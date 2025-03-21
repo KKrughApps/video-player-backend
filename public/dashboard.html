@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CMS Dashboard</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        .form-container, .list-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin: 20px auto;
+            max-width: 600px;
+        }
+        .form-container input, .form-container textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            box-sizing: border-box;
+        }
+        .form-container button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .form-container button:hover {
+            background-color: #0056b3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ccc;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        button {
+            padding: 5px 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            width: 80%;
+            max-width: 600px;
+            position: relative;
+        }
+        .close {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            font-size: 20px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>CMS Dashboard</h1>
+    <div class="form-container">
+        <h2>Upload New Animation</h2>
+        <form action="/admin/add" method="POST" enctype="multipart/form-data">
+            <input type="file" name="video" accept="video/mp4" required>
+            <input type="text" name="name" placeholder="Name of Exercise/Patient Ed Video" required>
+            <textarea name="voiceoverText" placeholder="Voiceover Text (English)" required></textarea>
+            <input type="text" name="setsRepsDuration" placeholder="Sets/Reps/Duration" required>
+            <input type="text" name="reminder" placeholder="Reminder" required>
+            <label><input type="checkbox" name="twoSided"> Is this two-sided?</label>
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+    <div class="list-container">
+        <h2>Animations</h2>
+        <table id="animationsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Embed Code</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+    </div>
+
+    <div id="previewModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2>Preview Animation</h2>
+            <div id="animationDetails"></div>
+            <video id="animationVideo" controls style="width: 100%;"></video>
+            <label for="languageSelect">Select Language:</label>
+            <select id="languageSelect">
+                <option value="en">English</option>
+                <option value="es">Spanish</option>
+            </select>
+        </div>
+    </div>
+
+    <script>
+        fetch('/admin/list')
+            .then(response => response.json())
+            .then(data => {
+                const tableBody = document.querySelector('#animationsTable tbody');
+                data.animations.forEach(animation => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${animation.id}</td>
+                        <td>${animation.name}</td>
+                        <td><input type="text" value='<iframe src="https://video-player-backend-xfmfy.ondigitalocean.app/embed/${animation.id}" width="600" height="400"></iframe>' readonly></td>
+                        <td>
+                            <button onclick="previewAnimation(${animation.id})">Play</button>
+                            <button onclick="editAnimation(${animation.id})">Edit</button>
+                        </td>
+                    `;
+                    tableBody.appendChild(row);
+                });
+            });
+
+        function previewAnimation(id) {
+            fetch(`/api/animation/${id}`)
+                .then(response => response.json())
+                .then(data => {
+                    const modal = document.getElementById('previewModal');
+                    const details = document.getElementById('animationDetails');
+                    const video = document.getElementById('animationVideo');
+                    const languageSelect = document.getElementById('languageSelect');
+
+                    details.innerHTML = `
+                        <p><strong>Name:</strong> ${data.name}</p>
+                        <p><strong>Sets/Reps/Duration:</strong> ${data.setsRepsDuration}</p>
+                        <p><strong>Reminder:</strong> ${data.reminder}</p>
+                    `;
+
+                    const loadVideo = (lang) => {
+                        fetch(`/api/narration/${id}/${lang}/full`)
+                            .then(response => response.json())
+                            .then(data => {
+                                video.src = data.videoUrl;
+                            });
+                    };
+
+                    languageSelect.onchange = () => loadVideo(languageSelect.value);
+                    loadVideo('en');
+
+                    modal.style.display = 'flex';
+                });
+        }
+
+        function editAnimation(id) {
+            window.location.href = `/admin/edit/${id}`;
+        }
+
+        document.querySelector('.close').onclick = () => {
+            document.getElementById('previewModal').style.display = 'none';
+            document.getElementById('animationVideo').pause();
+        };
+    </script>
+</body>
+</html>
