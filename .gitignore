@@ -1,0 +1,7 @@
+node_modules/
+*.db
+narration_*.mp3
+temp_video_*.mp4
+temp_gif_*.gif
+videos/video_*.mp4
+test_audio.mp3
