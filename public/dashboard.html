@@ -78,18 +78,17 @@
             align-items: center;
         }
         .modal-content {
-            background-color: transparent;
-            padding: 20px;
-            border-radius: 5px;
-            width: 80%;
-            max-width: 600px;
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 30px;
+            width: 420px;
             position: relative;
             text-align: center;
         }
         .close {
             position: absolute;
-            top: 5px;
-            left: 5px;
+            top: 15px;
+            left: 15px;
             font-size: 30px;
             cursor: pointer;
             color: #000;
@@ -107,10 +106,7 @@
             width: 400px;
             height: 400px;
             margin: 0 auto;
-            background-color: #fff;
-            padding: 10px;
-            border-radius: 30px;
-            box-sizing: content-box;
+            border-radius: 20px;
         }
         .video-container video {
             width: 400px;
@@ -130,8 +126,7 @@
             align-items: center;
         }
         .video-container video::-webkit-media-controls-play-button {
-            background-color: transparent;
-            color: white;
+            display: none; /* Hide native play button */
         }
         .video-container video::-webkit-media-controls-volume-slider {
             background-color: transparent;
