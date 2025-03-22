@@ -126,31 +126,39 @@ async function translateText(text, language) {
 async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}`);
     const voiceId = 'pNInz6obpgDQGcFmaJgB';
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'xi-api-key': ELEVENLABS_API_KEY,
-        },
-        body: JSON.stringify({
-            text: text,
-            model_id: 'eleven_monolingual_v1',
-            voice_settings: {
-                stability: 0.5,
-                similarity_boost: 0.5,
+    try {
+        const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'xi-api-key': ELEVENLABS_API_KEY,
             },
-        }),
-    });
+            body: JSON.stringify({
+                text: text,
+                model_id: 'eleven_monolingual_v1',
+                voice_settings: {
+                    stability: 0.5,
+                    similarity_boost: 0.5,
+                },
+            }),
+        });
 
-    if (!response.ok) {
-        throw new Error(`ElevenLabs API error: ${response.statusText}`);
+        console.log(`ElevenLabs API response status: ${response.status}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`ElevenLabs API error: ${errorText}`);
+            throw new Error(`ElevenLabs API error: ${errorText}`);
+        }
+
+        const narrationPath = path.join(__dirname, `narration_${language}.mp3`);
+        const buffer = await response.buffer();
+        await fs.writeFile(narrationPath, buffer);
+        console.log(`Narration path: ${narrationPath}`);
+        return narrationPath;
+    } catch (error) {
+        console.error(`Error in fetchNarration: ${error.message}`);
+        throw error;
     }
-
-    const narrationPath = path.join(__dirname, `narration_${language}.mp3`);
-    const buffer = await response.buffer();
-    await fs.writeFile(narrationPath, buffer);
-    console.log(`Narration path: ${narrationPath}`);
-    return narrationPath;
 }
 
 // Helper function to combine video and audio using ffmpeg
@@ -164,8 +172,14 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath) {
             .outputOptions('-map 0:v:0')
             .outputOptions('-map 1:a:0')
             .output(outputPath)
-            .on('end', () => resolve(outputPath))
-            .on('error', (err) => reject(err))
+            .on('end', () => {
+                console.log(`FFmpeg combine completed: ${outputPath}`);
+                resolve(outputPath);
+            })
+            .on('error', (err) => {
+                console.error(`FFmpeg combine error: ${err.message}`);
+                reject(err);
+            })
             .run();
     });
 }
@@ -178,8 +192,14 @@ async function flipVideo(inputPath, outputPath) {
             .videoFilter('hflip')
             .outputOptions('-c:a copy')
             .output(outputPath)
-            .on('end', () => resolve(outputPath))
-            .on('error', (err) => reject(err))
+            .on('end', () => {
+                console.log(`FFmpeg flip completed: ${outputPath}`);
+                resolve(outputPath);
+            })
+            .on('error', (err) => {
+                console.error(`FFmpeg flip error: ${err.message}`);
+                reject(err);
+            })
             .run();
     });
 }
@@ -464,7 +484,7 @@ app.get('/api/animation/:id', async (req, res) => {
 });
 
 // API to generate narration and combine with video
-app.post('/api/narration/:id/:language/full', async (req, res) => {
+app.get('/api/narration/:id/:language/full', async (req, res) => {
     const { id, language } = req.params;
 
     try {
@@ -472,8 +492,14 @@ app.post('/api/narration/:id/:language/full', async (req, res) => {
 
         const animation = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-                if (err) reject(err);
-                if (!row) reject(new Error('Animation not found'));
+                if (err) {
+                    console.error(`Database error: ${err.message}`);
+                    reject(err);
+                }
+                if (!row) {
+                    console.error('Animation not found');
+                    reject(new Error('Animation not found'));
+                }
                 resolve(row);
             });
         });
@@ -486,14 +512,14 @@ app.post('/api/narration/:id/:language/full', async (req, res) => {
         const narrationPath = await fetchNarration(translatedText, language);
 
         const videoPath = path.join(__dirname, animation.videoPath);
-        const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
+        const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp3`);
         await combineVideoAndAudio(videoPath, narrationPath, outputPath);
 
         console.log(`Successfully created ${outputPath}`);
 
-        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` });
+        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp3` });
     } catch (error) {
-        console.error('Error processing narration:', error);
+        console.error('Error processing narration:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
