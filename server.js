@@ -9,7 +9,7 @@ const multer = require('multer');
 const session = require('express-session');
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 10000; // Changed from 3000 to 10000
 const host = '0.0.0.0';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
@@ -447,7 +447,9 @@ app.get('/test', (req, res) => {
 // API to get animation metadata
 app.get('/api/animation/:id', async (req, res) => {
     const { id } = req.params;
-    console.log(`Received request for /api/animation/${id}`);
+    console.log(`Received request
+
+ for /api/animation/${id}`);
     db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
         if (err) {
             console.error('Error fetching animation:', err.message);
