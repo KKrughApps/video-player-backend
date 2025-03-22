@@ -88,8 +88,8 @@
         }
         .close {
             position: absolute;
-            top: 0;
-            right: 10px;
+            top: 5px;
+            left: 5px;
             font-size: 30px;
             cursor: pointer;
             color: #000;
@@ -107,7 +107,10 @@
             width: 400px;
             height: 400px;
             margin: 0 auto;
-            border-radius: 20px;
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 30px;
+            box-sizing: content-box;
         }
         .video-container video {
             width: 400px;
@@ -172,7 +175,7 @@
             content: '▶';
             color: #FFFFFF;
             font-size: 40px;
-            transform: translateX(5px);
+            transform: translate(0, 0);
             -webkit-text-stroke: 1px #FFFFFF;
         }
         .play-button-overlay:hover {
@@ -206,8 +209,8 @@
         }
         .language-dropdown {
             position: absolute;
-            top: 10px;
-            right: 30px;
+            top: 15px;
+            right: 15px;
             z-index: 1000;
         }
         .language-button {
