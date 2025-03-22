@@ -125,6 +125,7 @@ async function translateText(text, language) {
 // Helper function to fetch narration from ElevenLabs
 async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}`);
+    console.log(`Using API key: ${ELEVENLABS_API_KEY}`);
     const voiceId = 'pNInz6obpgDQGcFmaJgB';
     try {
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
@@ -512,12 +513,12 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
         const narrationPath = await fetchNarration(translatedText, language);
 
         const videoPath = path.join(__dirname, animation.videoPath);
-        const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`); // Fixed extension to .mp4
+        const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
         await combineVideoAndAudio(videoPath, narrationPath, outputPath);
 
         console.log(`Successfully created ${outputPath}`);
 
-        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` }); // Fixed extension to .mp4
+        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` });
     } catch (error) {
         console.error('Error processing narration:', error.message);
         res.status(500).json({ error: error.message });
