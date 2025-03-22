@@ -78,7 +78,7 @@
             align-items: center;
         }
         .modal-content {
-            background-color: white;
+            background-color: transparent;
             padding: 20px;
             border-radius: 5px;
             width: 80%;
@@ -88,17 +88,25 @@
         }
         .close {
             position: absolute;
-            top: 10px;
-            right: 10px;
-            font-size: 20px;
+            top: -10px;
+            right: -10px;
+            font-size: 30px;
             cursor: pointer;
+            color: #000;
+            background-color: #fff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1001;
         }
         .video-container {
             position: relative;
             width: 400px;
             height: 400px;
             margin: 0 auto;
-            background-color: #fff;
             border-radius: 20px;
         }
         .video-container video {
@@ -181,6 +189,11 @@
             margin-left: auto;
             margin-right: auto;
         }
+        .metadata h2 {
+            margin-top: 0;
+            font-size: 1.5em;
+            color: #333;
+        }
         .metadata p {
             margin: 10px 0;
             color: #666;
@@ -194,7 +207,7 @@
         .language-dropdown {
             position: absolute;
             top: 10px;
-            right: 10px;
+            right: 20px;
             z-index: 1000;
         }
         .language-button {
@@ -348,6 +361,7 @@
                     video.src = '';
 
                     details.innerHTML = `
+                        <h2>${data.name}</h2>
                         <p><strong>Repetitions:</strong> ${data.setsRepsDuration}</p>
                         <p class="reminder"><strong>Reminder:</strong> ${data.reminder}</p>
                     `;
