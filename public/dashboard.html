@@ -88,8 +88,8 @@
         }
         .close {
             position: absolute;
-            top: -10px;
-            right: -10px;
+            top: 0;
+            right: 10px;
             font-size: 30px;
             cursor: pointer;
             color: #000;
@@ -172,7 +172,7 @@
             content: '▶';
             color: #FFFFFF;
             font-size: 40px;
-            transform: scale(1.2);
+            transform: translateX(5px);
             -webkit-text-stroke: 1px #FFFFFF;
         }
         .play-button-overlay:hover {
@@ -207,7 +207,7 @@
         .language-dropdown {
             position: absolute;
             top: 10px;
-            right: 20px;
+            right: 30px;
             z-index: 1000;
         }
         .language-button {
@@ -387,6 +387,21 @@
                                 video.style.display = 'block';
                                 playButtonOverlay.style.display = 'block';
                                 loadingSpinner.style.display = 'none';
+
+                                // Fetch narration duration and adjust video playback speed
+                                fetch(video.src)
+                                    .then(res => res.blob())
+                                    .then(blob => {
+                                        const audio = new Audio(URL.createObjectURL(blob));
+                                        audio.onloadedmetadata = () => {
+                                            const narrationDuration = audio.duration;
+                                            const videoDuration = video.duration;
+                                            if (narrationDuration && videoDuration) {
+                                                const speed = videoDuration / narrationDuration;
+                                                video.playbackRate = speed;
+                                            }
+                                        };
+                                    });
                             })
                             .catch(err => {
                                 errorMessage.textContent = 'Error loading video: ' + err.message;
