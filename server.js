@@ -512,12 +512,12 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
         const narrationPath = await fetchNarration(translatedText, language);
 
         const videoPath = path.join(__dirname, animation.videoPath);
-        const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp3`);
+        const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`); // Fixed extension to .mp4
         await combineVideoAndAudio(videoPath, narrationPath, outputPath);
 
         console.log(`Successfully created ${outputPath}`);
 
-        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp3` });
+        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` }); // Fixed extension to .mp4
     } catch (error) {
         console.error('Error processing narration:', error.message);
         res.status(500).json({ error: error.message });
