@@ -126,7 +126,7 @@ async function translateText(text, language) {
 async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}`);
     console.log(`Using API key: ${ELEVENLABS_API_KEY}`);
-    const voiceId = 'pNInz6obpgDQGcFmaJgB';
+    const voiceId = 'TX3LPaxmHKxFdv7VOQHJ'; // Liam's correct voice ID
     try {
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
             method: 'POST',
