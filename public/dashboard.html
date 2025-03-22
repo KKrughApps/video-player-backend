@@ -84,6 +84,7 @@
             width: 80%;
             max-width: 600px;
             position: relative;
+            text-align: center;
         }
         .close {
             position: absolute;
@@ -91,6 +92,24 @@
             right: 10px;
             font-size: 20px;
             cursor: pointer;
+        }
+        .header {
+            background-color: #007bff;
+            color: white;
+            padding: 10px;
+            border-radius: 5px 5px 0 0;
+            margin: -20px -20px 20px -20px;
+            font-size: 24px;
+            font-weight: bold;
+        }
+        .details p {
+            margin: 5px 0;
+        }
+        .details p strong {
+            font-weight: bold;
+        }
+        .details p.reminder {
+            color: #666;
         }
     </style>
 </head>
@@ -126,8 +145,8 @@
     <div id="previewModal" class="modal">
         <div class="modal-content">
             <span class="close">×</span>
-            <h2>Preview Animation</h2>
-            <div id="animationDetails"></div>
+            <div class="header" id="animationHeader"></div>
+            <div class="details" id="animationDetails"></div>
             <div id="loadingMessage" style="display: none;">Loading video, please wait...</div>
             <div id="errorMessage" style="display: none; color: red;"></div>
             <video id="animationVideo" controls style="width: 400px; height: 400px; display: none;"></video>
@@ -169,6 +188,7 @@
                 .then(response => response.json())
                 .then(data => {
                     const modal = document.getElementById('previewModal');
+                    const header = document.getElementById('animationHeader');
                     const details = document.getElementById('animationDetails');
                     const video = document.getElementById('animationVideo');
                     const languageSelect = document.getElementById('languageSelect');
@@ -181,10 +201,10 @@
                     errorMessage.style.display = 'none';
                     video.src = ''; // Clear previous video source
 
+                    header.textContent = data.name.toUpperCase();
                     details.innerHTML = `
-                        <p><strong>Name:</strong> ${data.name}</p>
-                        <p><strong>Sets/Reps/Duration:</strong> ${data.setsRepsDuration}</p>
-                        <p><strong>Reminder:</strong> ${data.reminder}</p>
+                        <p><strong>Repetitions:</strong> ${data.setsRepsDuration}</p>
+                        <p class="reminder"><strong>Reminder:</strong> ${data.reminder}</p>
                     `;
 
                     const loadVideo = (lang) => {
