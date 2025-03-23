@@ -68,68 +68,6 @@ const db = new sqlite3.Database(dbPath, (err) => {
     }
 });
 
-// Initialize the database
-const initializeDatabase = () => {
-    db.serialize(() => {
-        db.run(`
-            CREATE TABLE IF NOT EXISTS animations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                videoPath TEXT NOT NULL,
-                voiceoverText TEXT,
-                setsRepsDuration TEXT,
-                reminder TEXT,
-                twoSided INTEGER DEFAULT 0
-            )
-        `, (err) => {
-            if (err) {
-                console.error('Error creating animations table:', err.message);
-            } else {
-                console.log('Animations table created or already exists.');
-            }
-        });
-
-        db.get('SELECT COUNT(*) as count FROM animations', (err, row) => {
-            if (err) {
-                console.error('Error checking animations table:', err.message);
-                return;
-            }
-            if (row.count === 0) {
-                console.log('Inserting default animation data...');
-                db.run(`
-                    INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `, [
-                    'Foam Roller Front of Thighs Left',
-                    'videos/default.mp4',
-                    'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
-                    'Roll for 30 seconds to 1 minute.',
-                    'Keep your rolling speed slow and controlled.',
-                    0
-                ], async (err) => {
-                    if (err) {
-                        console.error('Error inserting default animation:', err.message);
-                    } else {
-                        console.log('Default animation inserted successfully.');
-                        const animationId = this.lastID;
-                        await pregenerateNarratedVideos(animationId);
-                    }
-                });
-            }
-            // Pre-generate narrated videos for all existing animations on startup
-            db.all('SELECT id FROM animations', async (err, rows) => {
-                if (err) {
-                    console.error('Error fetching animations for pre-generation:', err.message);
-                    return;
-                }
-                for (const row of rows) {
-                    await pregenerateNarratedVideos(row.id);
-                }
-            });
-        });
-    });
-};
-
 // Helper function to get video duration using ffmpeg
 async function getVideoDuration(videoPath) {
     return new Promise((resolve, reject) => {
@@ -164,7 +102,10 @@ async function getAudioDuration(audioPath) {
 async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
     try {
         const audioDuration = await getAudioDuration(inputPath);
-        const tempo = targetDuration / audioDuration;
+        let tempo = targetDuration / audioDuration;
+        // Constrain tempo to reasonable limits (0.5 to 2.0) to avoid extreme speed changes
+        if (tempo < 0.5) tempo = 0.5;
+        if (tempo > 2.0) tempo = 2.0;
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
                 .audioFilters(`atempo=${tempo}`)
@@ -184,6 +125,78 @@ async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
         throw err;
     }
 }
+
+// Initialize the database
+const initializeDatabase = () => {
+    db.serialize(() => {
+        db.run(`
+            CREATE TABLE IF NOT EXISTS animations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                videoPath TEXT NOT NULL,
+                voiceoverText TEXT,
+                setsRepsDuration TEXT,
+                reminder TEXT,
+                twoSided INTEGER DEFAULT 0,
+                originalDuration REAL DEFAULT 0
+            )
+        `, (err) => {
+            if (err) {
+                console.error('Error creating animations table:', err.message);
+            } else {
+                console.log('Animations table created or already exists.');
+            }
+        });
+
+        db.get('SELECT COUNT(*) as count FROM animations', async (err, row) => {
+            if (err) {
+                console.error('Error checking animations table:', err.message);
+                return;
+            }
+            if (row.count === 0) {
+                console.log('Inserting default animation data...');
+                const defaultVideoPath = 'videos/default.mp4';
+                let originalDuration = 0;
+                try {
+                    originalDuration = await getVideoDuration(defaultVideoPath);
+                } catch (err) {
+                    console.error('Error getting default video duration:', err.message);
+                    originalDuration = 38; // Fallback to expected duration
+                }
+                db.run(`
+                    INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `, [
+                    'Foam Roller Front of Thighs Left',
+                    defaultVideoPath,
+                    'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
+                    'Roll for 30 seconds to 1 minute.',
+                    'Keep your rolling speed slow and controlled.',
+                    0,
+                    originalDuration
+                ], async (err) => {
+                    if (err) {
+                        console.error('Error inserting default animation:', err.message);
+                    } else {
+                        console.log('Default animation inserted successfully.');
+                        const animationId = this.lastID;
+                        await pregenerateNarratedVideos(animationId);
+                    }
+                });
+            }
+            // Pre-generate narrated videos for all existing animations on startup
+            db.all('SELECT id FROM animations', async (err, rows) => {
+                if (err) {
+                    console.error('Error fetching animations for pre-generation:', err.message);
+                    return;
+                }
+                for (const row of rows) {
+                    await pregenerateNarratedVideos(row.id);
+                }
+            });
+        });
+    });
+};
 
 // Helper function to translate text (mock implementation)
 async function translateText(text, language) {
@@ -293,7 +306,7 @@ async function pregenerateNarratedVideos(id) {
 
         const languages = ['en', 'es', 'fr', 'de', 'it', 'ja', 'ko'];
         const originalVideoPath = path.join(__dirname, animation.videoPath);
-        const videoDuration = await getVideoDuration(originalVideoPath);
+        const targetDuration = animation.originalDuration || 38; // Fallback to 38 seconds if not set
 
         for (const language of languages) {
             console.log(`Pre-generating narrated video for animation ${id} in language ${language}`);
@@ -304,12 +317,9 @@ async function pregenerateNarratedVideos(id) {
                 const translatedText = await translateText(animation.voiceoverText, language);
                 const narrationPath = await fetchNarration(translatedText, language);
                 const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
                 await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
                 console.log(`Pre-generated video: ${videoPath}`);
-                // Clean up temporary narration files
-                await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-                await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
             } else {
                 console.log(`Video already exists for animation ${id} in language ${language}: ${videoPath}`);
             }
@@ -370,12 +380,13 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
     const videoPath = req.file ? req.file.path : 'videos/default.mp4';
 
     try {
-        const insertAnimation = (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided) => {
+        const originalDuration = await getVideoDuration(videoPath);
+        const insertAnimation = (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration) => {
             return new Promise((resolve, reject) => {
                 db.run(`
-                    INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                `, [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0], function(err) {
+                    INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                `, [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, originalDuration], function(err) {
                     if (err) {
                         reject(err);
                     } else {
@@ -385,7 +396,7 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             });
         };
 
-        const originalId = await insertAnimation(name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided);
+        const originalId = await insertAnimation(name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
         await pregenerateNarratedVideos(originalId);
 
         if (twoSided) {
@@ -393,7 +404,7 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             const mirroredVoiceoverText = voiceoverText.replace(/left/i, 'right').replace(/right/i, 'left');
             const mirroredVideoPath = videoPath.replace('.mp4', '_mirrored.mp4');
             await flipVideo(videoPath, mirroredVideoPath);
-            const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided);
+            const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
             await pregenerateNarratedVideos(mirroredId);
         }
 
@@ -418,13 +429,15 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             });
         });
 
-        const updateAnimation = (id, name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided) => {
+        const originalDuration = videoPath ? await getVideoDuration(videoPath) : animation.originalDuration;
+
+        const updateAnimation = (id, name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration) => {
             return new Promise((resolve, reject) => {
                 const query = videoPath
-                    ? `UPDATE animations SET name = ?, videoPath = ?, voiceoverText = ?, setsRepsDuration = ?, reminder = ?, twoSided = ? WHERE id = ?`
+                    ? `UPDATE animations SET name = ?, videoPath = ?, voiceoverText = ?, setsRepsDuration = ?, reminder = ?, twoSided = ?, originalDuration = ? WHERE id = ?`
                     : `UPDATE animations SET name = ?, voiceoverText = ?, setsRepsDuration = ?, reminder = ?, twoSided = ? WHERE id = ?`;
                 const params = videoPath
-                    ? [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, id]
+                    ? [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, originalDuration, id]
                     : [name, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, id];
                 db.run(query, params, function(err) {
                     if (err) reject(err);
@@ -433,7 +446,7 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             });
         };
 
-        await updateAnimation(id, name, videoPath || animation.videoPath, voiceoverText, setsRepsDuration, reminder, twoSided);
+        await updateAnimation(id, name, videoPath || animation.videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
         await pregenerateNarratedVideos(id);
 
         if (twoSided) {
@@ -453,14 +466,14 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             });
 
             if (mirroredAnimation) {
-                await updateAnimation(mirroredAnimation.id, mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided);
+                await updateAnimation(mirroredAnimation.id, mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
                 await pregenerateNarratedVideos(mirroredAnimation.id);
             } else {
                 const mirroredId = await new Promise((resolve, reject) => {
                     db.run(`
-                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    `, [mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, 1], function(err) {
+                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    `, [mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, 1, originalDuration], function(err) {
                         if (err) reject(err);
                         resolve(this.lastID);
                     });
@@ -626,13 +639,11 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
             const translatedText = await translateText(animation.voiceoverText, language);
             const narrationPath = await fetchNarration(translatedText, language);
             const originalVideoPath = path.join(__dirname, animation.videoPath);
-            const videoDuration = await getVideoDuration(originalVideoPath);
             const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-            await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+            const targetDuration = animation.originalDuration || 38; // Fallback to 38 seconds
+            await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
             await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
             console.log(`Generated video: ${videoPath}`);
-            await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-            await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
         }
 
         res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` });
