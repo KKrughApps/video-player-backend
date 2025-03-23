@@ -8,15 +8,49 @@ const ffmpeg = require('fluent-ffmpeg');
 const multer = require('multer');
 const session = require('express-session');
 const { Translate } = require('@google-cloud/translate').v2;
+const AWS = require('aws-sdk');
 
 const app = express();
 const port = process.env.PORT || 10000;
 const host = '0.0.0.0';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY; // Set this in your environment variables
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
 const translate = new Translate({ key: GOOGLE_API_KEY });
+
+// Configure DigitalOcean Spaces
+const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_ENDPOINT);
+const s3 = new AWS.S3({
+    endpoint: spacesEndpoint,
+    accessKeyId: process.env.SPACES_KEY,
+    secretAccessKey: process.env.SPACES_SECRET
+});
+
+// Helper function to upload to Spaces
+async function uploadToSpaces(filePath, key) {
+    const fileContent = await fs.readFile(filePath);
+    await s3.upload({
+        Bucket: process.env.SPACES_BUCKET,
+        Key: key,
+        Body: fileContent,
+        ACL: 'public-read'
+    }).promise();
+    return `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+}
+
+// Helper function to check if file exists in Spaces
+async function fileExistsInSpaces(key) {
+    try {
+        await s3.headObject({
+            Bucket: process.env.SPACES_BUCKET,
+            Key: key
+        }).promise();
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
 
 // Middleware
 app.use(cors());
@@ -357,7 +391,7 @@ async function flipVideo(inputPath, outputPath) {
     });
 }
 
-// Helper function to pre-generate narrated videos for all languages
+// Helper function to pre-generate narrated videos for top 3 languages
 async function pregenerateNarratedVideos(id) {
     try {
         const animation = await new Promise((resolve, reject) => {
@@ -374,30 +408,29 @@ async function pregenerateNarratedVideos(id) {
             });
         });
 
-        const languages = ['en', 'es', 'fr', 'de', 'it', 'ja', 'ko'];
+        const languages = ['en', 'es', 'ar']; // Top 3 languages for Boise St. Luke's
         const originalVideoPath = path.join(__dirname, animation.videoPath);
-        const targetDuration = animation.originalDuration || 38; // Fallback to 38 seconds if not set
+        const targetDuration = animation.originalDuration || 38;
 
         for (const language of languages) {
             console.log(`Pre-generating narrated video for animation ${id} in language ${language}`);
-            const videoPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
-            const fileExists = await fs.access(videoPath).then(() => true).catch(() => false);
-
-            if (!fileExists) {
+            const videoKey = `temp_video_${id}_${language}_full.mp4`;
+            const videoExists = await fileExistsInSpaces(videoKey);
+            if (!videoExists) {
                 try {
                     const translatedText = await translateText(animation.voiceoverText, language);
                     const narrationPath = await fetchNarration(translatedText, language);
-                    const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                    const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp4`);
                     await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
-                    console.log(`Pre-generated video: ${videoPath}`);
+                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, adjustedNarrationPath);
+                    await uploadToSpaces(adjustedNarrationPath, videoKey);
+                    console.log(`Pre-generated video: ${videoKey}`);
                 } catch (err) {
                     console.error(`Failed to pre-generate video for language ${language}: ${err.message}`);
-                    // Continue with the next language instead of failing completely
                     continue;
                 }
             } else {
-                console.log(`Video already exists for animation ${id} in language ${language}: ${videoPath}`);
+                console.log(`Video already exists for animation ${id} in language ${language}: ${videoKey}`);
             }
         }
     } catch (error) {
@@ -616,6 +649,7 @@ app.get('/embed/:id', (req, res) => {
                 <select id="languageSelect">
                     <option value="en">English</option>
                     <option value="es">Spanish</option>
+                    <option value="ar">Arabic</option>
                 </select>
             </div>
             <script>
@@ -686,17 +720,17 @@ app.get('/api/animation/:id', async (req, res) => {
     });
 });
 
-// API to serve pre-generated narrated videos
+// API to serve narrated videos from Spaces
 app.get('/api/narration/:id/:language/full', async (req, res) => {
     const { id, language } = req.params;
 
     try {
         console.log(`Received request for /api/narration/${id}/${language}/full`);
 
-        const videoPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
-        const fileExists = await fs.access(videoPath).then(() => true).catch(() => false);
+        const videoKey = `temp_video_${id}_${language}_full.mp4`;
+        const videoExists = await fileExistsInSpaces(videoKey);
 
-        if (!fileExists) {
+        if (!videoExists) {
             console.log(`Pre-generated video not found for ${id}/${language}, generating now...`);
             const animation = await new Promise((resolve, reject) => {
                 db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
@@ -715,14 +749,16 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
             const translatedText = await translateText(animation.voiceoverText, language);
             const narrationPath = await fetchNarration(translatedText, language);
             const originalVideoPath = path.join(__dirname, animation.videoPath);
-            const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-            const targetDuration = animation.originalDuration || 38; // Fallback to 38 seconds
+            const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp4`);
+            const targetDuration = animation.originalDuration || 38;
             await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
-            console.log(`Generated video: ${videoPath}`);
+            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, adjustedNarrationPath);
+            await uploadToSpaces(adjustedNarrationPath, videoKey);
+            console.log(`Generated video: ${videoKey}`);
         }
 
-        res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` });
+        const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${videoKey}`;
+        res.json({ videoUrl });
     } catch (error) {
         console.error('Error serving narrated video:', error.message);
         res.status(500).json({ error: error.message });
