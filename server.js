@@ -7,12 +7,16 @@ const cors = require('cors');
 const ffmpeg = require('fluent-ffmpeg');
 const multer = require('multer');
 const session = require('express-session');
+const { Translate } = require('@google-cloud/translate').v2;
 
 const app = express();
 const port = process.env.PORT || 10000;
 const host = '0.0.0.0';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY; // Set this in your environment variables
+
+const translate = new Translate({ key: GOOGLE_API_KEY });
 
 // Middleware
 app.use(cors());
@@ -121,9 +125,17 @@ async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
                 ffmpeg(inputPath)
                     .audioFilters('adelay=1000|1000') // 1-second delay at the start
                     .output(outputPath)
-                    .on('end', () => {
+                    .on('end', async () => {
                         console.log(`Added 1-second delay to narration: ${outputPath}`);
-                        resolve(outputPath);
+                        // Validate the output file
+                        try {
+                            const adjustedDuration = await getAudioDuration(outputPath);
+                            console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
+                            resolve(outputPath);
+                        } catch (err) {
+                            console.error(`Validation failed for adjusted narration: ${err.message}`);
+                            reject(err);
+                        }
                     })
                     .on('error', (err) => {
                         console.error(`Error adding delay to narration: ${err.message}`);
@@ -140,9 +152,22 @@ async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
                     `apad=pad_dur=${paddingDuration / 1000}` // Pad with silence at the end
                 ])
                 .output(outputPath)
-                .on('end', () => {
+                .on('end', async () => {
                     console.log(`Padded narration duration to ${targetDuration} seconds (including 1-second delay): ${outputPath}`);
-                    resolve(outputPath);
+                    // Validate the output file
+                    try {
+                        const adjustedDuration = await getAudioDuration(outputPath);
+                        console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
+                        if (Math.abs(adjustedDuration - targetDuration) > 1) {
+                            console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetDuration})`);
+                            reject(new Error('Adjusted narration duration does not match target'));
+                        } else {
+                            resolve(outputPath);
+                        }
+                    } catch (err) {
+                        console.error(`Validation failed for adjusted narration: ${err.message}`);
+                        reject(err);
+                    }
                 })
                 .on('error', (err) => {
                     console.error(`Error padding narration duration: ${err.message}`);
@@ -228,10 +253,17 @@ const initializeDatabase = () => {
     });
 };
 
-// Helper function to translate text (mock implementation)
+// Helper function to translate text using Google Translate API
 async function translateText(text, language) {
-    console.log(`Calling translateText with voiceoverText: ${text}`);
-    return text;
+    console.log(`Translating voiceoverText to ${language}: ${text}`);
+    try {
+        const [translation] = await translate.translate(text, language);
+        console.log(`Translated text for ${language}: ${translation}`);
+        return translation;
+    } catch (error) {
+        console.error(`Error translating text to ${language}: ${error.message}`);
+        return text; // Fallback to original text
+    }
 }
 
 // Helper function to fetch narration from ElevenLabs
@@ -285,9 +317,17 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath) {
             .outputOptions('-map 0:v:0')
             .outputOptions('-map 1:a:0')
             .output(outputPath)
-            .on('end', () => {
+            .on('end', async () => {
                 console.log(`FFmpeg combine completed: ${outputPath}`);
-                resolve(outputPath);
+                // Validate the output video file
+                try {
+                    const videoDuration = await getVideoDuration(outputPath);
+                    console.log(`Generated video duration: ${videoDuration} seconds`);
+                    resolve(outputPath);
+                } catch (err) {
+                    console.error(`Validation failed for generated video: ${err.message}`);
+                    reject(err);
+                }
             })
             .on('error', (err) => {
                 console.error(`FFmpeg combine error: ${err.message}`);
