@@ -80,7 +80,7 @@
         .modal-content {
             background-color: #fff;
             padding: 10px;
-            border-radius: 30px;
+            border-radius: 15px;
             width: 420px;
             position: relative;
             text-align: center;
@@ -106,15 +106,15 @@
             width: 400px;
             height: 400px;
             margin: 0 auto;
-            border-radius: 20px;
+            border-radius: 10px;
         }
         .video-container video {
             width: 400px;
             height: 400px;
-            border-radius: 20px;
+            border-radius: 10px;
         }
         .video-container video::-webkit-media-controls {
-            border-radius: 0 0 20px 20px;
+            border-radius: 0 0 10px 10px;
         }
         .video-container video::-webkit-media-controls-panel {
             background-color: #484848;
@@ -149,32 +149,6 @@
         @keyframes spin {
             0% { transform: translate(-50%, -50%) rotate(0deg); }
             100% { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-        .play-button-overlay {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background-color: #162C2A;
-            opacity: 0.9;
-            border-radius: 50%;
-            width: 90px;
-            height: 90px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            z-index: 2;
-        }
-        .play-button-overlay::before {
-            content: '▶';
-            color: #FFFFFF;
-            font-size: 40px;
-            transform: translate(0, 0);
-            -webkit-text-stroke: 1px #FFFFFF;
-        }
-        .play-button-overlay:hover {
-            background-color: #1A3C39;
         }
         .metadata {
             background-color: #f0f8ff;
@@ -300,7 +274,6 @@
             <div class="video-container">
                 <video id="animationVideo" controls style="width: 400px; height: 400px;"></video>
                 <div id="loadingSpinner" class="loading-spinner" style="display: none;"></div>
-                <div id="playButtonOverlay" class="play-button-overlay"></div>
             </div>
             <div id="errorMessage" style="display: none; color: red;"></div>
             <div class="metadata" id="animationDetails"></div>
@@ -349,11 +322,9 @@
                     const languageMenu = document.getElementById('languageMenu');
                     const loadingSpinner = document.getElementById('loadingSpinner');
                     const errorMessage = document.getElementById('errorMessage');
-                    const playButtonOverlay = document.getElementById('playButtonOverlay');
 
                     // Reset modal state
                     video.style.display = 'none';
-                    playButtonOverlay.style.display = 'block';
                     loadingSpinner.style.display = 'block';
                     errorMessage.style.display = 'none';
                     video.src = '';
@@ -374,7 +345,6 @@
 
                     const loadVideo = (lang) => {
                         video.style.display = 'none';
-                        playButtonOverlay.style.display = 'block';
                         loadingSpinner.style.display = 'block';
                         errorMessage.style.display = 'none';
 
@@ -383,7 +353,6 @@
                             .then(data => {
                                 video.src = data.videoUrl;
                                 video.style.display = 'block';
-                                playButtonOverlay.style.display = 'block';
                                 loadingSpinner.style.display = 'none';
 
                                 // Fetch narration duration and adjust video playback speed
@@ -405,17 +374,7 @@
                                 errorMessage.textContent = 'Error loading video: ' + err.message;
                                 errorMessage.style.display = 'block';
                                 loadingSpinner.style.display = 'none';
-                                playButtonOverlay.style.display = 'none';
                             });
-                    };
-
-                    video.onplay = () => {
-                        playButtonOverlay.style.display = 'none';
-                    };
-
-                    playButtonOverlay.onclick = () => {
-                        video.play();
-                        playButtonOverlay.style.display = 'none';
                     };
 
                     languageItems.forEach(item => {
