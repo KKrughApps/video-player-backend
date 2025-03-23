@@ -50,8 +50,12 @@ app.use((req, res, next) => {
 
 // Ensure the videos and temp directories exist
 const ensureDirectories = async () => {
-    await fs.mkdir(path.join(__dirname, 'videos'), { recursive: true }).catch(err => console.error('Error creating videos directory:', err));
-    await fs.mkdir(path.join(__dirname, 'temp'), { recursive: true }).catch(err => console.error('Error creating temp directory:', err));
+    try {
+        await fs.mkdir(path.join(__dirname, 'videos'), { recursive: true });
+        await fs.mkdir(path.join(__dirname, 'temp'), { recursive: true });
+    } catch (err) {
+        console.error('Error creating directories:', err.message);
+    }
 };
 
 // SQLite Database Setup
@@ -107,7 +111,6 @@ const initializeDatabase = () => {
                         console.error('Error inserting default animation:', err.message);
                     } else {
                         console.log('Default animation inserted successfully.');
-                        // Pre-generate narrated videos for the default animation
                         const animationId = this.lastID;
                         await pregenerateNarratedVideos(animationId);
                     }
@@ -126,6 +129,61 @@ const initializeDatabase = () => {
         });
     });
 };
+
+// Helper function to get video duration using ffmpeg
+async function getVideoDuration(videoPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(videoPath, (err, metadata) => {
+            if (err) {
+                console.error(`Error getting video duration: ${err.message}`);
+                reject(err);
+            } else {
+                const duration = metadata.format.duration;
+                resolve(duration);
+            }
+        });
+    });
+}
+
+// Helper function to get audio duration using ffmpeg
+async function getAudioDuration(audioPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg.ffprobe(audioPath, (err, metadata) => {
+            if (err) {
+                console.error(`Error getting audio duration: ${err.message}`);
+                reject(err);
+            } else {
+                const duration = metadata.format.duration;
+                resolve(duration);
+            }
+        });
+    });
+}
+
+// Helper function to adjust narration duration using ffmpeg
+async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
+    try {
+        const audioDuration = await getAudioDuration(inputPath);
+        const tempo = targetDuration / audioDuration;
+        return new Promise((resolve, reject) => {
+            ffmpeg(inputPath)
+                .audioFilters(`atempo=${tempo}`)
+                .output(outputPath)
+                .on('end', () => {
+                    console.log(`Adjusted narration duration: ${outputPath}`);
+                    resolve(outputPath);
+                })
+                .on('error', (err) => {
+                    console.error(`Error adjusting narration duration: ${err.message}`);
+                    reject(err);
+                })
+                .run();
+        });
+    } catch (err) {
+        console.error(`Error in adjustNarrationDuration: ${err.message}`);
+        throw err;
+    }
+}
 
 // Helper function to translate text (mock implementation)
 async function translateText(text, language) {
@@ -163,8 +221,8 @@ async function fetchNarration(text, language) {
         }
 
         const narrationPath = path.join(__dirname, `narration_${language}.mp3`);
-        const buffer = await response.buffer();
-        await fs.writeFile(narrationPath, buffer);
+        const arrayBuffer = await response.arrayBuffer();
+        await fs.writeFile(narrationPath, Buffer.from(arrayBuffer));
         console.log(`Narration path: ${narrationPath}`);
         return narrationPath;
     } catch (error) {
@@ -234,17 +292,24 @@ async function pregenerateNarratedVideos(id) {
         });
 
         const languages = ['en', 'es', 'fr', 'de', 'it', 'ja', 'ko'];
+        const originalVideoPath = path.join(__dirname, animation.videoPath);
+        const videoDuration = await getVideoDuration(originalVideoPath);
+
         for (const language of languages) {
             console.log(`Pre-generating narrated video for animation ${id} in language ${language}`);
             const videoPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
             const fileExists = await fs.access(videoPath).then(() => true).catch(() => false);
-            
+
             if (!fileExists) {
                 const translatedText = await translateText(animation.voiceoverText, language);
                 const narrationPath = await fetchNarration(translatedText, language);
-                const originalVideoPath = path.join(__dirname, animation.videoPath);
-                await combineVideoAndAudio(originalVideoPath, narrationPath, videoPath);
+                const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+                await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
                 console.log(`Pre-generated video: ${videoPath}`);
+                // Clean up temporary narration files
+                await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
             } else {
                 console.log(`Video already exists for animation ${id} in language ${language}: ${videoPath}`);
             }
@@ -305,7 +370,6 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
     const videoPath = req.file ? req.file.path : 'videos/default.mp4';
 
     try {
-        // Insert the original animation
         const insertAnimation = (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided) => {
             return new Promise((resolve, reject) => {
                 db.run(`
@@ -322,11 +386,8 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
         };
 
         const originalId = await insertAnimation(name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided);
-
-        // Pre-generate narrated videos for the new animation
         await pregenerateNarratedVideos(originalId);
 
-        // If two-sided, create a mirrored animation
         if (twoSided) {
             const mirroredName = name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
             const mirroredVoiceoverText = voiceoverText.replace(/left/i, 'right').replace(/right/i, 'left');
@@ -350,7 +411,6 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
     const videoPath = req.file ? req.file.path : null;
 
     try {
-        // Fetch the current animation
         const animation = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
                 if (err) reject(err);
@@ -358,7 +418,6 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             });
         });
 
-        // Update the original animation
         const updateAnimation = (id, name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided) => {
             return new Promise((resolve, reject) => {
                 const query = videoPath
@@ -375,11 +434,8 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
         };
 
         await updateAnimation(id, name, videoPath || animation.videoPath, voiceoverText, setsRepsDuration, reminder, twoSided);
-
-        // Pre-generate narrated videos for the updated animation
         await pregenerateNarratedVideos(id);
 
-        // If two-sided, update or create the mirrored animation
         if (twoSided) {
             const mirroredName = name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
             const mirroredVoiceoverText = voiceoverText.replace(/left/i, 'right').replace(/right/i, 'left');
@@ -413,12 +469,11 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             }
         }
 
-        // Clear any old cached narrated videos
         const tempDir = path.join(__dirname, 'temp');
         const files = await fs.readdir(tempDir);
         for (const file of files) {
             if (file.includes(`temp_video_${id}_`)) {
-                await fs.unlink(path.join(tempDir, file));
+                await fs.unlink(path.join(tempDir, file)).catch(err => console.error(`Error deleting file: ${err.message}`));
             }
         }
 
@@ -571,8 +626,13 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
             const translatedText = await translateText(animation.voiceoverText, language);
             const narrationPath = await fetchNarration(translatedText, language);
             const originalVideoPath = path.join(__dirname, animation.videoPath);
-            await combineVideoAndAudio(originalVideoPath, narrationPath, videoPath);
+            const videoDuration = await getVideoDuration(originalVideoPath);
+            const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+            await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
             console.log(`Generated video: ${videoPath}`);
+            await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+            await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
         }
 
         res.json({ videoUrl: `/temp/temp_video_${id}_${language}_full.mp4` });
