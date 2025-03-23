@@ -98,24 +98,28 @@ async function getAudioDuration(audioPath) {
     });
 }
 
-// Helper function to adjust narration duration using ffmpeg
+// Helper function to pad narration with silence to match target duration
 async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
     try {
         const audioDuration = await getAudioDuration(inputPath);
-        let tempo = targetDuration / audioDuration;
-        // Constrain tempo to reasonable limits (0.5 to 2.0) to avoid extreme speed changes
-        if (tempo < 0.5) tempo = 0.5;
-        if (tempo > 2.0) tempo = 2.0;
+        const paddingDuration = (targetDuration - audioDuration) * 1000; // Convert to milliseconds for FFmpeg
+        if (paddingDuration <= 0) {
+            // If the audio is already longer than the target, just copy it
+            await fs.copyFile(inputPath, outputPath);
+            console.log(`No padding needed, copied narration: ${outputPath}`);
+            return outputPath;
+        }
+
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
-                .audioFilters(`atempo=${tempo}`)
+                .audioFilters(`apad=pad_dur=${paddingDuration / 1000}`) // Pad with silence at the end
                 .output(outputPath)
                 .on('end', () => {
-                    console.log(`Adjusted narration duration: ${outputPath}`);
+                    console.log(`Padded narration duration to ${targetDuration} seconds: ${outputPath}`);
                     resolve(outputPath);
                 })
                 .on('error', (err) => {
-                    console.error(`Error adjusting narration duration: ${err.message}`);
+                    console.error(`Error padding narration duration: ${err.message}`);
                     reject(err);
                 })
                 .run();
