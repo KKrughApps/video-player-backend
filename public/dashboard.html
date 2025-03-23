@@ -283,11 +283,7 @@
                 <ul id="languageMenu" class="language-menu">
                     <li class="language-item" data-lang="en">English</li>
                     <li class="language-item" data-lang="es">Spanish</li>
-                    <li class="language-item" data-lang="fr">French</li>
-                    <li class="language-item" data-lang="de">German</li>
-                    <li class="language-item" data-lang="it">Italian</li>
-                    <li class="language-item" data-lang="ja">Japanese</li>
-                    <li class="language-item" data-lang="ko">Korean</li>
+                    <li class="language-item" data-lang="ar">Arabic</li>
                 </ul>
             </div>
         </div>
@@ -355,27 +351,6 @@
                                 video.src = data.videoUrl;
                                 video.style.display = 'block';
                                 loadingSpinner.style.display = 'none';
-
-                                // Adjust video playback speed to match voiceover duration
-                                video.onloadedmetadata = () => {
-                                    const narratedVideoDuration = video.duration;
-                                    // Assuming the original animation duration is known (e.g., from metadata or API)
-                                    // For now, let's assume the original animation duration is the English version
-                                    fetch(`/api/narration/${id}/en/full`)
-                                        .then(res => res.json())
-                                        .then(originalData => {
-                                            const originalVideo = document.createElement('video');
-                                            originalVideo.src = originalData.videoUrl;
-                                            originalVideo.onloadedmetadata = () => {
-                                                const originalDuration = originalVideo.duration;
-                                                if (narratedVideoDuration && originalDuration) {
-                                                    const speed = originalDuration / narratedVideoDuration;
-                                                    video.playbackRate = speed;
-                                                    console.log(`Adjusted playback speed to ${speed} for language ${lang}`);
-                                                }
-                                            };
-                                        });
-                                };
                             })
                             .catch(err => {
                                 errorMessage.textContent = 'Error loading video: ' + err.message;
