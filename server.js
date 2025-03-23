@@ -29,14 +29,19 @@ const s3 = new AWS.S3({
 
 // Helper function to upload to Spaces
 async function uploadToSpaces(filePath, key) {
-    const fileContent = await fs.readFile(filePath);
-    await s3.upload({
-        Bucket: process.env.SPACES_BUCKET,
-        Key: key,
-        Body: fileContent,
-        ACL: 'public-read'
-    }).promise();
-    return `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+    try {
+        const fileContent = await fs.readFile(filePath);
+        await s3.upload({
+            Bucket: process.env.SPACES_BUCKET,
+            Key: key,
+            Body: fileContent,
+            ACL: 'public-read'
+        }).promise();
+        return `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+    } catch (err) {
+        console.error(`Error uploading to Spaces: ${err.message}`);
+        throw err;
+    }
 }
 
 // Helper function to check if file exists in Spaces
@@ -273,16 +278,29 @@ const initializeDatabase = () => {
                     }
                 });
             }
+
             // Pre-generate narrated videos for all existing animations on startup
-            db.all('SELECT id FROM animations', async (err, rows) => {
-                if (err) {
-                    console.error('Error fetching animations for pre-generation:', err.message);
-                    return;
+            setTimeout(async () => {
+                try {
+                    const rows = await new Promise((resolve, reject) => {
+                        db.all('SELECT id FROM animations', (err, rows) => {
+                            if (err) {
+                                console.error('Error fetching animations for pre-generation:', err.message);
+                                reject(err);
+                            } else {
+                                resolve(rows);
+                            }
+                        });
+                    });
+                    for (const row of rows) {
+                        if (row.id) {
+                            await pregenerateNarratedVideos(row.id);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error during pre-generation on startup:', error.message);
                 }
-                for (const row of rows) {
-                    await pregenerateNarratedVideos(row.id);
-                }
-            });
+            }, 1000); // Delay to ensure DB is fully initialized
         });
     });
 };
@@ -342,53 +360,63 @@ async function fetchNarration(text, language) {
 
 // Helper function to combine video and audio using ffmpeg
 async function combineVideoAndAudio(videoPath, audioPath, outputPath) {
-    return new Promise((resolve, reject) => {
-        ffmpeg()
-            .input(videoPath)
-            .input(audioPath)
-            .outputOptions('-c:v copy')
-            .outputOptions('-c:a aac')
-            .outputOptions('-map 0:v:0')
-            .outputOptions('-map 1:a:0')
-            .output(outputPath)
-            .on('end', async () => {
-                console.log(`FFmpeg combine completed: ${outputPath}`);
-                // Validate the output video file
-                try {
-                    const videoDuration = await getVideoDuration(outputPath);
-                    console.log(`Generated video duration: ${videoDuration} seconds`);
-                    resolve(outputPath);
-                } catch (err) {
-                    console.error(`Validation failed for generated video: ${err.message}`);
+    try {
+        return new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(videoPath)
+                .input(audioPath)
+                .outputOptions('-c:v copy')
+                .outputOptions('-c:a aac')
+                .outputOptions('-map 0:v:0')
+                .outputOptions('-map 1:a:0')
+                .output(outputPath)
+                .on('end', async () => {
+                    console.log(`FFmpeg combine completed: ${outputPath}`);
+                    // Validate the output video file
+                    try {
+                        const videoDuration = await getVideoDuration(outputPath);
+                        console.log(`Generated video duration: ${videoDuration} seconds`);
+                        resolve(outputPath);
+                    } catch (err) {
+                        console.error(`Validation failed for generated video: ${err.message}`);
+                        reject(err);
+                    }
+                })
+                .on('error', (err) => {
+                    console.error(`FFmpeg combine error: ${err.message}`);
                     reject(err);
-                }
-            })
-            .on('error', (err) => {
-                console.error(`FFmpeg combine error: ${err.message}`);
-                reject(err);
-            })
-            .run();
-    });
+                })
+                .run();
+        });
+    } catch (error) {
+        console.error(`Error in combineVideoAndAudio: ${error.message}`);
+        throw error;
+    }
 }
 
 // Helper function to flip video horizontally using ffmpeg
 async function flipVideo(inputPath, outputPath) {
-    return new Promise((resolve, reject) => {
-        ffmpeg()
-            .input(inputPath)
-            .videoFilter('hflip')
-            .outputOptions('-c:a copy')
-            .output(outputPath)
-            .on('end', () => {
-                console.log(`FFmpeg flip completed: ${outputPath}`);
-                resolve(outputPath);
-            })
-            .on('error', (err) => {
-                console.error(`FFmpeg flip error: ${err.message}`);
-                reject(err);
-            })
-            .run();
-    });
+    try {
+        return new Promise((resolve, reject) => {
+            ffmpeg()
+                .input(inputPath)
+                .videoFilter('hflip')
+                .outputOptions('-c:a copy')
+                .output(outputPath)
+                .on('end', () => {
+                    console.log(`FFmpeg flip completed: ${outputPath}`);
+                    resolve(outputPath);
+                })
+                .on('error', (err) => {
+                    console.error(`FFmpeg flip error: ${err.message}`);
+                    reject(err);
+                })
+                .run();
+        });
+    } catch (error) {
+        console.error(`Error in flipVideo: ${error.message}`);
+        throw error;
+    }
 }
 
 // Helper function to pre-generate narrated videos for top 3 languages
@@ -420,10 +448,11 @@ async function pregenerateNarratedVideos(id) {
                 try {
                     const translatedText = await translateText(animation.voiceoverText, language);
                     const narrationPath = await fetchNarration(translatedText, language);
-                    const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp4`);
+                    const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                    const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
                     await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, adjustedNarrationPath);
-                    await uploadToSpaces(adjustedNarrationPath, videoKey);
+                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath);
+                    await uploadToSpaces(combinedOutputPath, videoKey);
                     console.log(`Pre-generated video: ${videoKey}`);
                 } catch (err) {
                     console.error(`Failed to pre-generate video for language ${language}: ${err.message}`);
@@ -749,11 +778,12 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
             const translatedText = await translateText(animation.voiceoverText, language);
             const narrationPath = await fetchNarration(translatedText, language);
             const originalVideoPath = path.join(__dirname, animation.videoPath);
-            const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp4`);
+            const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+            const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
             const targetDuration = animation.originalDuration || 38;
             await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, adjustedNarrationPath);
-            await uploadToSpaces(adjustedNarrationPath, videoKey);
+            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath);
+            await uploadToSpaces(combinedOutputPath, videoKey);
             console.log(`Generated video: ${videoKey}`);
         }
 
