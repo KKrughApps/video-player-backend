@@ -80,7 +80,7 @@
         .modal-content {
             background-color: #fff;
             padding: 10px;
-            padding-bottom: 15px; /* 10px + 5px extra below metadata */
+            padding-bottom: 15px;
             border-radius: 15px;
             width: 420px;
             position: relative;
@@ -356,20 +356,26 @@
                                 video.style.display = 'block';
                                 loadingSpinner.style.display = 'none';
 
-                                // Fetch narration duration and adjust video playback speed
-                                fetch(video.src)
-                                    .then(res => res.blob())
-                                    .then(blob => {
-                                        const audio = new Audio(URL.createObjectURL(blob));
-                                        audio.onloadedmetadata = () => {
-                                            const narrationDuration = audio.duration;
-                                            const videoDuration = video.duration;
-                                            if (narrationDuration && videoDuration) {
-                                                const speed = videoDuration / narrationDuration;
-                                                video.playbackRate = speed;
-                                            }
-                                        };
-                                    });
+                                // Adjust video playback speed to match voiceover duration
+                                video.onloadedmetadata = () => {
+                                    const narratedVideoDuration = video.duration;
+                                    // Assuming the original animation duration is known (e.g., from metadata or API)
+                                    // For now, let's assume the original animation duration is the English version
+                                    fetch(`/api/narration/${id}/en/full`)
+                                        .then(res => res.json())
+                                        .then(originalData => {
+                                            const originalVideo = document.createElement('video');
+                                            originalVideo.src = originalData.videoUrl;
+                                            originalVideo.onloadedmetadata = () => {
+                                                const originalDuration = originalVideo.duration;
+                                                if (narratedVideoDuration && originalDuration) {
+                                                    const speed = originalDuration / narratedVideoDuration;
+                                                    video.playbackRate = speed;
+                                                    console.log(`Adjusted playback speed to ${speed} for language ${lang}`);
+                                                }
+                                            };
+                                        });
+                                };
                             })
                             .catch(err => {
                                 errorMessage.textContent = 'Error loading video: ' + err.message;
