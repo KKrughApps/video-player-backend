@@ -112,9 +112,17 @@ const initializeDatabase = () => {
                         await pregenerateNarratedVideos(animationId);
                     }
                 });
-            } else {
-                console.log('Animations table already contains data.');
             }
+            // Pre-generate narrated videos for all existing animations on startup
+            db.all('SELECT id FROM animations', async (err, rows) => {
+                if (err) {
+                    console.error('Error fetching animations for pre-generation:', err.message);
+                    return;
+                }
+                for (const row of rows) {
+                    await pregenerateNarratedVideos(row.id);
+                }
+            });
         });
     });
 };
@@ -228,12 +236,18 @@ async function pregenerateNarratedVideos(id) {
         const languages = ['en', 'es', 'fr', 'de', 'it', 'ja', 'ko'];
         for (const language of languages) {
             console.log(`Pre-generating narrated video for animation ${id} in language ${language}`);
-            const translatedText = await translateText(animation.voiceoverText, language);
-            const narrationPath = await fetchNarration(translatedText, language);
-            const videoPath = path.join(__dirname, animation.videoPath);
-            const outputPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
-            await combineVideoAndAudio(videoPath, narrationPath, outputPath);
-            console.log(`Pre-generated video: ${outputPath}`);
+            const videoPath = path.join(__dirname, `temp/temp_video_${id}_${language}_full.mp4`);
+            const fileExists = await fs.access(videoPath).then(() => true).catch(() => false);
+            
+            if (!fileExists) {
+                const translatedText = await translateText(animation.voiceoverText, language);
+                const narrationPath = await fetchNarration(translatedText, language);
+                const originalVideoPath = path.join(__dirname, animation.videoPath);
+                await combineVideoAndAudio(originalVideoPath, narrationPath, videoPath);
+                console.log(`Pre-generated video: ${videoPath}`);
+            } else {
+                console.log(`Video already exists for animation ${id} in language ${language}: ${videoPath}`);
+            }
         }
     } catch (error) {
         console.error(`Error pre-generating narrated videos for animation ${id}:`, error.message);
@@ -399,7 +413,7 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             }
         }
 
-        // Clear cached narrated videos (if any exist from previous implementation)
+        // Clear any old cached narrated videos
         const tempDir = path.join(__dirname, 'temp');
         const files = await fs.readdir(tempDir);
         for (const file of files) {
