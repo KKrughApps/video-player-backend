@@ -19,7 +19,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
-app.use('/temp', express.static(path.join(__dirname, 'temp')));
+app.use('/temp', express.static(path.join(__dirname, 'temp'), {
+    setHeaders: (res, path) => {
+        if (path.endsWith('.mp4')) {
+            res.setHeader('Content-Type', 'video/mp4');
+        }
+    }
+}));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Session middleware for authentication
@@ -102,20 +108,40 @@ async function getAudioDuration(audioPath) {
 async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
     try {
         const audioDuration = await getAudioDuration(inputPath);
-        const paddingDuration = (targetDuration - audioDuration) * 1000; // Convert to milliseconds for FFmpeg
+        console.log(`Original narration duration: ${audioDuration} seconds`);
+        
+        // Target duration for the narration itself (excluding the 1-second delay)
+        const narrationTargetDuration = targetDuration - 1; // 38 - 1 = 37 seconds
+        const paddingDuration = (narrationTargetDuration - audioDuration) * 1000; // Convert to milliseconds for FFmpeg
+        console.log(`Padding duration: ${paddingDuration} ms`);
+
         if (paddingDuration <= 0) {
-            // If the audio is already longer than the target, just copy it
-            await fs.copyFile(inputPath, outputPath);
-            console.log(`No padding needed, copied narration: ${outputPath}`);
-            return outputPath;
+            // If the audio is already longer than the target, just add the 1-second delay
+            return new Promise((resolve, reject) => {
+                ffmpeg(inputPath)
+                    .audioFilters('adelay=1000|1000') // 1-second delay at the start
+                    .output(outputPath)
+                    .on('end', () => {
+                        console.log(`Added 1-second delay to narration: ${outputPath}`);
+                        resolve(outputPath);
+                    })
+                    .on('error', (err) => {
+                        console.error(`Error adding delay to narration: ${err.message}`);
+                        reject(err);
+                    })
+                    .run();
+            });
         }
 
         return new Promise((resolve, reject) => {
             ffmpeg(inputPath)
-                .audioFilters(`apad=pad_dur=${paddingDuration / 1000}`) // Pad with silence at the end
+                .audioFilters([
+                    'adelay=1000|1000', // 1-second delay at the start
+                    `apad=pad_dur=${paddingDuration / 1000}` // Pad with silence at the end
+                ])
                 .output(outputPath)
                 .on('end', () => {
-                    console.log(`Padded narration duration to ${targetDuration} seconds: ${outputPath}`);
+                    console.log(`Padded narration duration to ${targetDuration} seconds (including 1-second delay): ${outputPath}`);
                     resolve(outputPath);
                 })
                 .on('error', (err) => {
@@ -210,7 +236,7 @@ async function translateText(text, language) {
 
 // Helper function to fetch narration from ElevenLabs
 async function fetchNarration(text, language) {
-    console.log(`Calling ElevenLabs API with text: ${text}`);
+    console.log(`Calling ElevenLabs API with text: ${text}, language: ${language}`);
     console.log(`Using API key: ${ELEVENLABS_API_KEY}`);
     const voiceId = 'TX3LPaxmHKxFdv7VOQHJ'; // Liam's correct voice ID
     try {
@@ -233,17 +259,17 @@ async function fetchNarration(text, language) {
         console.log(`ElevenLabs API response status: ${response.status}`);
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`ElevenLabs API error: ${errorText}`);
+            console.error(`ElevenLabs API error for language ${language}: ${errorText}`);
             throw new Error(`ElevenLabs API error: ${errorText}`);
         }
 
         const narrationPath = path.join(__dirname, `narration_${language}.mp3`);
         const arrayBuffer = await response.arrayBuffer();
         await fs.writeFile(narrationPath, Buffer.from(arrayBuffer));
-        console.log(`Narration path: ${narrationPath}`);
+        console.log(`Narration path for language ${language}: ${narrationPath}`);
         return narrationPath;
     } catch (error) {
-        console.error(`Error in fetchNarration: ${error.message}`);
+        console.error(`Error in fetchNarration for language ${language}: ${error.message}`);
         throw error;
     }
 }
@@ -318,18 +344,24 @@ async function pregenerateNarratedVideos(id) {
             const fileExists = await fs.access(videoPath).then(() => true).catch(() => false);
 
             if (!fileExists) {
-                const translatedText = await translateText(animation.voiceoverText, language);
-                const narrationPath = await fetchNarration(translatedText, language);
-                const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-                await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
-                console.log(`Pre-generated video: ${videoPath}`);
+                try {
+                    const translatedText = await translateText(animation.voiceoverText, language);
+                    const narrationPath = await fetchNarration(translatedText, language);
+                    const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                    await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
+                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, videoPath);
+                    console.log(`Pre-generated video: ${videoPath}`);
+                } catch (err) {
+                    console.error(`Failed to pre-generate video for language ${language}: ${err.message}`);
+                    // Continue with the next language instead of failing completely
+                    continue;
+                }
             } else {
                 console.log(`Video already exists for animation ${id} in language ${language}: ${videoPath}`);
             }
         }
     } catch (error) {
-        console.error(`Error pre-generating narrated videos for animation ${id}:`, error.message);
+        console.error(`Error pre-generating narrated videos for animation ${id}: ${error.message}`);
     }
 }
 
