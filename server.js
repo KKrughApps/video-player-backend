@@ -428,7 +428,7 @@ async function flipVideo(inputPath, outputPath) {
     }
 }
 
-// Helper function to pre-generate narrated videos for top 3 languages
+// Helper function to pre-generate narrated videos for English and Spanish
 async function pregenerateNarratedVideos(id) {
     try {
         const animation = await new Promise((resolve, reject) => {
@@ -445,7 +445,7 @@ async function pregenerateNarratedVideos(id) {
             });
         });
 
-        const languages = ['en', 'es', 'ar']; // Top 3 languages for Boise St. Luke's
+        const languages = ['en', 'es']; // Only English and Spanish
         const originalVideoPath = path.join(__dirname, animation.videoPath);
         const targetDuration = animation.originalDuration || 38;
 
@@ -687,7 +687,6 @@ app.get('/embed/:id', (req, res) => {
                 <select id="languageSelect">
                     <option value="en">English</option>
                     <option value="es">Spanish</option>
-                    <option value="ar">Arabic</option>
                 </select>
             </div>
             <script>
@@ -761,6 +760,11 @@ app.get('/api/animation/:id', async (req, res) => {
 // API to serve narrated videos from Spaces
 app.get('/api/narration/:id/:language/full', async (req, res) => {
     const { id, language } = req.params;
+
+    // Restrict to supported languages
+    if (!['en', 'es'].includes(language)) {
+        return res.status(400).json({ error: 'Unsupported language' });
+    }
 
     try {
         console.log(`Received request for /api/narration/${id}/${language}/full`);
