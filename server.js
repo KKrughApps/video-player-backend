@@ -247,6 +247,8 @@ const initializeDatabase = () => {
                 console.error('Error checking animations table:', err.message);
                 return;
             }
+
+            let defaultAnimationId = null;
             if (row.count === 0) {
                 console.log('Inserting default animation data...');
                 const defaultVideoPath = 'videos/default.mp4';
@@ -257,26 +259,33 @@ const initializeDatabase = () => {
                     console.error('Error getting default video duration:', err.message);
                     originalDuration = 38; // Fallback to expected duration
                 }
-                db.run(`
-                    INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                `, [
-                    'Foam Roller Front of Thighs Left',
-                    defaultVideoPath,
-                    'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
-                    'Roll for 30 seconds to 1 minute.',
-                    'Keep your rolling speed slow and controlled.',
-                    0,
-                    originalDuration
-                ], async (err) => {
-                    if (err) {
-                        console.error('Error inserting default animation:', err.message);
-                    } else {
-                        console.log('Default animation inserted successfully.');
-                        const animationId = this.lastID;
-                        await pregenerateNarratedVideos(animationId);
-                    }
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    `, [
+                        'Foam Roller Front of Thighs Left',
+                        defaultVideoPath,
+                        'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
+                        'Roll for 30 seconds to 1 minute.',
+                        'Keep your rolling speed slow and controlled.',
+                        0,
+                        originalDuration
+                    ], function(err) {
+                        if (err) {
+                            console.error('Error inserting default animation:', err.message);
+                            reject(err);
+                        } else {
+                            console.log('Default animation inserted successfully.');
+                            defaultAnimationId = this.lastID;
+                            resolve();
+                        }
+                    });
                 });
+                // Pre-generate for the default animation immediately after insertion
+                if (defaultAnimationId) {
+                    await pregenerateNarratedVideos(defaultAnimationId);
+                }
             }
 
             // Pre-generate narrated videos for all existing animations on startup
@@ -300,7 +309,7 @@ const initializeDatabase = () => {
                 } catch (error) {
                     console.error('Error during pre-generation on startup:', error.message);
                 }
-            }, 1000); // Delay to ensure DB is fully initialized
+            }, 2000); // Increased delay to ensure DB operations are complete
         });
     });
 };
