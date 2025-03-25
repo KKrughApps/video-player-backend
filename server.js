@@ -177,48 +177,29 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
         // Target duration for the spoken content (including 1-second delay, ending 2 seconds before video ends)
         const targetSpokenDuration = videoDuration - 2; // End 2 seconds before video ends
         const spokenDurationWithDelay = targetSpokenDuration - 1; // Subtract 1 second for the delay
-        const paddingDuration = (spokenDurationWithDelay - audioDuration) * 1000; // Convert to milliseconds for FFmpeg
+        const paddingDuration = (spokenDurationWithDelay - audioDuration); // Duration to pad in seconds
         console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
-        console.log(`Padding duration for spoken content: ${paddingDuration} ms`);
-
-        if (paddingDuration <= 0) {
-            // If the audio is already longer than the target, just add the 1-second delay
-            return new Promise((resolve, reject) => {
-                ffmpeg(inputPath)
-                    .audioFilters('adelay=1000|1000') // 1-second delay at the start
-                    .output(outputPath)
-                    .on('end', async () => {
-                        console.log(`Added 1-second delay to narration: ${outputPath}`);
-                        try {
-                            const adjustedDuration = await getAudioDuration(outputPath);
-                            console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
-                            resolve(outputPath);
-                        } catch (err) {
-                            console.error(`Validation failed for adjusted narration: ${err.message}`);
-                            reject(err);
-                        }
-                    })
-                    .on('error', (err) => {
-                        console.error(`Error adding delay to narration: ${err.message}`);
-                        reject(err);
-                    })
-                    .run();
-            });
-        }
+        console.log(`Padding duration for spoken content: ${paddingDuration} seconds`);
 
         return new Promise((resolve, reject) => {
-            ffmpeg(inputPath)
+            const ffmpegCommand = ffmpeg(inputPath)
                 .audioFilters([
-                    'adelay=1000|1000', // 1-second delay at the start
-                    `apad=pad_dur=${paddingDuration / 1000}` // Pad with silence to reach targetSpokenDuration
-                ])
+                    'adelay=1000|1000' // 1-second delay at the start
+                ]);
+
+            // Add padding if necessary
+            if (paddingDuration > 0) {
+                ffmpegCommand.audioFilters(`apad=pad_dur=${paddingDuration}`); // Pad with silence
+            }
+
+            ffmpegCommand
                 .output(outputPath)
                 .on('end', async () => {
-                    console.log(`Padded narration duration to ${targetSpokenDuration} seconds (including 1-second delay): ${outputPath}`);
+                    console.log(`Adjusted narration to target duration ${targetSpokenDuration} seconds (including 1-second delay): ${outputPath}`);
                     try {
                         const adjustedDuration = await getAudioDuration(outputPath);
                         console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
-                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 1) {
+                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 0.5) {
                             console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration})`);
                             reject(new Error('Adjusted narration duration does not match target'));
                         } else {
@@ -230,7 +211,7 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
                     }
                 })
                 .on('error', (err) => {
-                    console.error(`Error padding narration duration: ${err.message}`);
+                    console.error(`Error adjusting narration duration: ${err.message}`);
                     reject(err);
                 })
                 .run();
@@ -240,100 +221,6 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
         throw err;
     }
 }
-
-// Initialize the database
-const initializeDatabase = () => {
-    db.serialize(() => {
-        db.run(`
-            CREATE TABLE IF NOT EXISTS animations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                videoPath TEXT NOT NULL,
-                voiceoverText TEXT,
-                setsRepsDuration TEXT,
-                reminder TEXT,
-                twoSided INTEGER DEFAULT 0,
-                originalDuration REAL DEFAULT 0
-            )
-        `, (err) => {
-            if (err) {
-                console.error('Error creating animations table:', err.message);
-            } else {
-                console.log('Animations table created or already exists.');
-            }
-        });
-
-        db.get('SELECT COUNT(*) as count FROM animations', async (err, row) => {
-            if (err) {
-                console.error('Error checking animations table:', err.message);
-                return;
-            }
-
-            let defaultAnimationId = null;
-            if (row.count === 0) {
-                console.log('Inserting default animation data...');
-                const defaultVideoPath = 'videos/default.mp4';
-                let originalDuration = 0;
-                try {
-                    originalDuration = await getVideoDuration(defaultVideoPath);
-                } catch (err) {
-                    console.error('Error getting default video duration:', err.message);
-                    originalDuration = 38; // Fallback to expected duration
-                }
-                await new Promise((resolve, reject) => {
-                    db.run(`
-                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    `, [
-                        'Foam Roller Front of Thighs Left',
-                        defaultVideoPath,
-                        'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
-                        'Roll for 30 seconds to 1 minute.',
-                        'Keep your rolling speed slow and controlled.',
-                        0,
-                        originalDuration
-                    ], function(err) {
-                        if (err) {
-                            console.error('Error inserting default animation:', err.message);
-                            reject(err);
-                        } else {
-                            console.log('Default animation inserted successfully.');
-                            defaultAnimationId = this.lastID;
-                            resolve();
-                        }
-                    });
-                });
-                // Pre-generate for the default animation immediately after insertion
-                if (defaultAnimationId) {
-                    await pregenerateNarratedVideos(defaultAnimationId);
-                }
-            }
-
-            // Pre-generate narrated videos for all existing animations on startup
-            setTimeout(async () => {
-                try {
-                    const rows = await new Promise((resolve, reject) => {
-                        db.all('SELECT id FROM animations', (err, rows) => {
-                            if (err) {
-                                console.error('Error fetching animations for pre-generation:', err.message);
-                                reject(err);
-                            } else {
-                                resolve(rows);
-                            }
-                        });
-                    });
-                    for (const row of rows) {
-                        if (row.id) {
-                            await pregenerateNarratedVideos(row.id);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error during pre-generation on startup:', error.message);
-                }
-            }, 2000); // Increased delay to ensure DB operations are complete
-        });
-    });
-};
 
 // Helper function to translate text using Google Translate API
 async function translateText(text, language) {
@@ -450,58 +337,161 @@ async function flipVideo(inputPath, outputPath) {
 }
 
 // Helper function to pre-generate narrated videos for English and Spanish
-async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
+async function pregenerateNarratedVideos(id) {
     try {
-        const audioDuration = await getAudioDuration(inputPath);
-        console.log(`Original narration duration: ${audioDuration} seconds`);
-
-        // Target duration for the spoken content (including 1-second delay, ending 2 seconds before video ends)
-        const targetSpokenDuration = videoDuration - 2; // End 2 seconds before video ends
-        const spokenDurationWithDelay = targetSpokenDuration - 1; // Subtract 1 second for the delay
-        const paddingDuration = (spokenDurationWithDelay - audioDuration); // Duration to pad in seconds
-        console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
-        console.log(`Padding duration for spoken content: ${paddingDuration} seconds`);
-
-        return new Promise((resolve, reject) => {
-            const ffmpegCommand = ffmpeg(inputPath)
-                .audioFilters([
-                    'adelay=1000|1000' // 1-second delay at the start
-                ]);
-
-            // Add padding if necessary
-            if (paddingDuration > 0) {
-                ffmpegCommand.audioFilters(`apad=pad_dur=${paddingDuration}`); // Pad with silence
-            }
-
-            ffmpegCommand
-                .output(outputPath)
-                .on('end', async () => {
-                    console.log(`Adjusted narration to target duration ${targetSpokenDuration} seconds (including 1-second delay): ${outputPath}`);
-                    try {
-                        const adjustedDuration = await getAudioDuration(outputPath);
-                        console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
-                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 0.5) {
-                            console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration})`);
-                            reject(new Error('Adjusted narration duration does not match target'));
-                        } else {
-                            resolve(outputPath);
-                        }
-                    } catch (err) {
-                        console.error(`Validation failed for adjusted narration: ${err.message}`);
-                        reject(err);
-                    }
-                })
-                .on('error', (err) => {
-                    console.error(`Error adjusting narration duration: ${err.message}`);
+        const animation = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
+                if (err) {
+                    console.error(`Database error: ${err.message}`);
                     reject(err);
-                })
-                .run();
+                }
+                if (!row) {
+                    console.error('Animation not found');
+                    reject(new Error('Animation not found'));
+                }
+                resolve(row);
+            });
         });
-    } catch (err) {
-        console.error(`Error in adjustNarrationDuration: ${err.message}`);
-        throw err;
+
+        const languages = ['en', 'es']; // Only English and Spanish
+        const originalVideoPath = path.join(__dirname, animation.videoPath);
+        const videoDuration = animation.originalDuration || 38;
+
+        for (const language of languages) {
+            console.log(`Starting pre-generation for animation ${id} in language ${language}`);
+            const videoKey = `temp_video_${id}_${language}_full.mp4`;
+            const videoExists = await fileExistsInSpaces(videoKey);
+            if (videoExists) {
+                console.log(`Video already exists for animation ${id} in language ${language}: ${videoKey}, skipping pre-generation.`);
+                continue;
+            }
+            try {
+                console.log(`Translating text for language ${language}`);
+                const translatedText = await translateText(animation.voiceoverText, language);
+                console.log(`Fetching narration for language ${language}`);
+                const narrationPath = await fetchNarration(translatedText, language);
+                console.log(`Adjusting narration duration for language ${language}`);
+                const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
+                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+                console.log(`Combining video and narration for language ${language}`);
+                await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
+                console.log(`Uploading video to Spaces for language ${language}`);
+                await uploadToSpaces(combinedOutputPath, videoKey);
+                console.log(`Pre-generated video: ${videoKey}`);
+            } catch (err) {
+                console.error(`Failed to pre-generate video for language ${language}: ${err.message}`);
+                console.error(err.stack);
+                continue;
+            }
+        }
+        console.log(`Completed pre-generation for animation ${id}`);
+    } catch (error) {
+        console.error(`Error pre-generating narrated videos for animation ${id}: ${error.message}`);
+        console.error(error.stack);
     }
 }
+
+// Initialize the database
+const initializeDatabase = () => {
+    db.serialize(() => {
+        db.run(`
+            CREATE TABLE IF NOT EXISTS animations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                videoPath TEXT NOT NULL,
+                voiceoverText TEXT,
+                setsRepsDuration TEXT,
+                reminder TEXT,
+                twoSided INTEGER DEFAULT 0,
+                originalDuration REAL DEFAULT 0
+            )
+        `, (err) => {
+            if (err) {
+                console.error('Error creating animations table:', err.message);
+            } else {
+                console.log('Animations table created or already exists.');
+            }
+        });
+
+        db.get('SELECT COUNT(*) as count FROM animations', async (err, row) => {
+            if (err) {
+                console.error('Error checking animations table:', err.message);
+                return;
+            }
+
+            let defaultAnimationId = null;
+            if (row.count === 0) {
+                console.log('Inserting default animation data...');
+                const defaultVideoPath = 'videos/default.mp4';
+                let originalDuration = 0;
+                try {
+                    originalDuration = await getVideoDuration(defaultVideoPath);
+                } catch (err) {
+                    console.error('Error getting default video duration:', err.message);
+                    originalDuration = 38; // Fallback to expected duration
+                }
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    `, [
+                        'Foam Roller Front of Thighs Left',
+                        defaultVideoPath,
+                        'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
+                        'Roll for 30 seconds to 1 minute.',
+                        'Keep your rolling speed slow and controlled.',
+                        0,
+                        originalDuration
+                    ], function(err) {
+                        if (err) {
+                            console.error('Error inserting default animation:', err.message);
+                            reject(err);
+                        } else {
+                            console.log('Default animation inserted successfully.');
+                            defaultAnimationId = this.lastID;
+                            resolve();
+                        }
+                    });
+                });
+                // Pre-generate for the default animation immediately after insertion
+                if (defaultAnimationId) {
+                    await pregenerateNarratedVideos(defaultAnimationId);
+                }
+            }
+
+            // Pre-generate narrated videos for all existing animations on startup
+            setTimeout(async () => {
+                try {
+                    const rows = await new Promise((resolve, reject) => {
+                        db.all('SELECT id FROM animations', (err, rows) => {
+                            if (err) {
+                                console.error('Error fetching animations for pre-generation:', err.message);
+                                reject(err);
+                            } else {
+                                resolve(rows);
+                            }
+                        });
+                    });
+                    for (const row of rows) {
+                        if (row.id) {
+                            // Check if videos already exist for this animation
+                            const enVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_en_full.mp4`);
+                            const esVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_es_full.mp4`);
+                            if (enVideoExists && esVideoExists) {
+                                console.log(`Videos already exist for animation ${row.id}, skipping pre-generation.`);
+                                continue;
+                            }
+                            await pregenerateNarratedVideos(row.id);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error during pre-generation on startup:', error.message);
+                }
+            }, 2000); // Increased delay to ensure DB operations are complete
+        });
+    });
+};
 
 // Middleware to check if user is authenticated
 const isAuthenticated = (req, res, next) => {
