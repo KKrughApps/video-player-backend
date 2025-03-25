@@ -668,9 +668,13 @@ app.get('/embed/:id', (req, res) => {
         <html lang="en">
         <head>
             <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
             <title>Animation Player</title>
             <style>
+                html {
+                    height: 100%;
+                    margin: 0;
+                }
                 body {
                     font-family: Arial, sans-serif;
                     margin: 0;
@@ -679,14 +683,14 @@ app.get('/embed/:id', (req, res) => {
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    height: 100vh; /* Use height instead of min-height */
-                    box-sizing: border-box; /* Ensure padding is included in height */
-                    position: fixed; /* Fix the body to the viewport */
+                    height: 100%; /* Use height: 100% for better Safari compatibility */
+                    box-sizing: border-box;
+                    position: fixed;
                     top: 0;
                     left: 0;
                     right: 0;
                     bottom: 0;
-                    overflow: hidden; /* Prevent scrolling */
+                    overflow: hidden;
                 }
                 .modal-content {
                     background-color: #fff;
@@ -694,8 +698,8 @@ app.get('/embed/:id', (req, res) => {
                     padding-bottom: 15px;
                     border-radius: 15px;
                     width: 420px;
-                    max-height: 90vh; /* Ensure it fits within viewport */
-                    overflow-y: auto; /* Allow internal scrolling if needed */
+                    max-height: 90vh;
+                    overflow-y: auto;
                     position: relative;
                     text-align: center;
                     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
@@ -819,17 +823,18 @@ app.get('/embed/:id', (req, res) => {
                 @media (max-width: 600px) {
                     .modal-content {
                         width: 90%;
+                        min-width: 300px; /* Ensure a minimum width */
                         max-width: 420px;
                     }
                     .video-container {
                         width: 100%;
                         height: auto;
-                        aspect-ratio: 1 / 1; /* Maintain square aspect ratio */
+                        min-height: 300px; /* Ensure a minimum height */
                     }
                     .video-container video {
                         width: 100%;
                         height: auto;
-                        aspect-ratio: 1 / 1;
+                        min-height: 300px;
                     }
                     .metadata {
                         width: 100%;
