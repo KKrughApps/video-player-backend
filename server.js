@@ -854,7 +854,7 @@ app.get('/embed/:id', (req, res) => {
         <body>
             <div class="modal-content">
                 <div class="video-container">
-                    <video id="animationVideo" controls style="width: 100%; height: auto;"></video>
+                    <video id="animationVideo" controls playsinline webkit-playsinline preload="metadata" style="width: 100%; height: auto;"></video>
                     <div id="loadingSpinner" class="loading-spinner"></div>
                 </div>
                 <div id="errorMessage" style="display: none; color: red;"></div>
