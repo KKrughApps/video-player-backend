@@ -674,37 +674,177 @@ app.get('/embed/:id', (req, res) => {
                 body {
                     font-family: Arial, sans-serif;
                     margin: 0;
-                    padding: 20px;
-                    background-color: #f0f0f0;
+                    padding: 0;
+                    background-color: transparent;
                     display: flex;
                     justify-content: center;
                     align-items: center;
                     height: 100vh;
+                    overflow: hidden;
                 }
-                .player-container {
-                    background-color: white;
-                    padding: 20px;
-                    border-radius: 5px;
-                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-                    max-width: 600px;
-                    width: 100%;
+                .modal-content {
+                    background-color: #fff;
+                    padding: 10px;
+                    padding-bottom: 15px;
+                    border-radius: 15px;
+                    width: 420px;
+                    position: relative;
                     text-align: center;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
                 }
-                video {
+                .video-container {
+                    position: relative;
+                    width: 400px;
+                    height: 400px;
+                    margin: 0 auto;
+                    border-radius: 10px;
+                }
+                .video-container video {
+                    width: 400px;
+                    height: 400px;
+                    border-radius: 10px;
+                }
+                .video-container video::-webkit-media-controls {
+                    border-radius: 0 0 10px 10px;
+                }
+                .video-container video::-webkit-media-controls-panel {
+                    background-color: #484848;
+                    opacity: 0.8;
+                    border-bottom-left-radius: 10px;
+                    border-bottom-right-radius: 10px;
+                    height: 40px;
+                    display: flex;
+                    align-items: center;
+                }
+                .video-container video::-webkit-media-controls-play-button {
+                    display: none; /* Hide native play button */
+                }
+                .video-container video::-webkit-media-controls-volume-slider {
+                    background-color: transparent;
+                }
+                .video-container video::-webkit-media-controls-fullscreen-button {
+                    background-color: transparent;
+                }
+                .loading-spinner {
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    border: 4px solid #f3f3f3;
+                    border-top: 4px solid #3498db;
+                    border-radius: 50%;
+                    width: 40px;
+                    height: 40px;
+                    animation: spin 1s linear infinite;
+                }
+                @keyframes spin {
+                    0% { transform: translate(-50%, -50%) rotate(0deg); }
+                    100% { transform: translate(-50%, -50%) rotate(360deg); }
+                }
+                .metadata {
+                    background-color: #f0f8ff;
+                    padding: 20px;
+                    border-radius: 10px;
+                    margin-top: 0;
                     width: 100%;
-                    margin-bottom: 20px;
+                    max-width: 400px;
+                    box-sizing: border-box;
+                    margin-left: auto;
+                    margin-right: auto;
+                }
+                .metadata h2 {
+                    margin-top: 0;
+                    font-size: 1.5em;
+                    color: #333;
+                }
+                .metadata p {
+                    margin: 10px 0;
+                    color: #666;
+                }
+                .metadata p strong {
+                    color: #333;
+                }
+                .metadata p.reminder {
+                    color: #666;
+                }
+                .language-dropdown {
+                    position: absolute;
+                    top: 15px;
+                    right: 15px;
+                    z-index: 1000;
+                }
+                .language-button {
+                    background-color: #D3D3D3;
+                    color: white;
+                    border: none;
+                    padding: 8px 15px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    font-family: Arial, sans-serif;
+                    border-radius: 5px;
+                }
+                .language-button:hover {
+                    background-color: #B0B0B0;
+                }
+                .language-menu {
+                    display: none;
+                    position: absolute;
+                    top: 100%;
+                    right: 0;
+                    background-color: #D3D3D3;
+                    border: none;
+                    border-radius: 5px;
+                    z-index: 1000;
+                    list-style: none;
+                    margin: 0;
+                    padding: 5px 0;
+                    padding-right: 5px;
+                    width: 180px;
+                    box-sizing: border-box;
+                }
+                .language-menu.visible {
+                    display: block;
+                }
+                .language-item {
+                    color: white;
+                    padding: 5px 3px;
+                    cursor: pointer;
+                    font-family: Arial, sans-serif;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .language-item:first-child {
+                    border-top-left-radius: 5px;
+                    border-top-right-radius: 5px;
+                }
+                .language-item:last-child {
+                    border-bottom-left-radius: 5px;
+                    border-bottom-right-radius: 5px;
+                }
+                .language-item:hover {
+                    background-color: #B0B0B0;
+                }
+                .language-item.selected {
+                    background-color: #B0B0B0;
                 }
             </style>
         </head>
         <body>
-            <div class="player-container">
-                <div id="animationDetails"></div>
-                <video id="animationVideo" controls></video>
-                <label for="languageSelect">Select Language:</label>
-                <select id="languageSelect">
-                    <option value="en">English</option>
-                    <option value="es">Spanish</option>
-                </select>
+            <div class="modal-content">
+                <div class="video-container">
+                    <video id="animationVideo" controls style="width: 400px; height: 400px;"></video>
+                    <div id="loadingSpinner" class="loading-spinner"></div>
+                </div>
+                <div id="errorMessage" style="display: none; color: red;"></div>
+                <div class="metadata" id="animationDetails"></div>
+                <div class="language-dropdown">
+                    <button class="language-button">Language</button>
+                    <ul id="languageMenu" class="language-menu">
+                        <li class="language-item selected" data-lang="en">English</li>
+                        <li class="language-item" data-lang="es">Spanish</li>
+                    </ul>
+                </div>
             </div>
             <script>
                 const id = window.location.pathname.split('/').pop();
@@ -713,30 +853,57 @@ app.get('/embed/:id', (req, res) => {
                     .then(data => {
                         const details = document.getElementById('animationDetails');
                         details.innerHTML = \`
-                            <p><strong>Name:</strong> \${data.name}</p>
-                            <p><strong>Sets/Reps/Duration:</strong> \${data.setsRepsDuration}</p>
-                            <p><strong>Reminder:</strong> \${data.reminder}</p>
+                            <h2>\${data.name}</h2>
+                            <p><strong>Repetitions:</strong> \${data.setsRepsDuration}</p>
+                            <p class="reminder"><strong>Reminder:</strong> \${data.reminder}</p>
                         \`;
 
                         const video = document.getElementById('animationVideo');
-                        const languageSelect = document.getElementById('languageSelect');
+                        const languageMenu = document.getElementById('languageMenu');
+                        const loadingSpinner = document.getElementById('loadingSpinner');
+                        const errorMessage = document.getElementById('errorMessage');
 
                         const loadVideo = (lang) => {
+                            video.style.display = 'none';
+                            loadingSpinner.style.display = 'block';
+                            errorMessage.style.display = 'none';
+
                             fetch(\`/api/narration/\${id}/\${lang}/full\`)
                                 .then(response => response.json())
                                 .then(data => {
                                     video.src = data.videoUrl;
+                                    video.style.display = 'block';
+                                    loadingSpinner.style.display = 'none';
                                 })
                                 .catch(err => {
-                                    console.error('Error loading video:', err);
+                                    errorMessage.textContent = 'Error loading video: ' + err.message;
+                                    errorMessage.style.display = 'block';
+                                    loadingSpinner.style.display = 'none';
                                 });
                         };
 
-                        languageSelect.onchange = () => loadVideo(languageSelect.value);
+                        const languageItems = languageMenu.querySelectorAll('.language-item');
+                        languageItems.forEach(item => {
+                            item.onclick = () => {
+                                const lang = item.getAttribute('data-lang');
+                                languageItems.forEach(i => i.classList.remove('selected'));
+                                item.classList.add('selected');
+                                loadVideo(lang);
+                                languageMenu.classList.remove('visible');
+                            };
+                        });
+
+                        document.querySelector('.language-button').onclick = () => {
+                            languageMenu.classList.toggle('visible');
+                        };
+
                         loadVideo('en');
                     })
                     .catch(err => {
                         console.error('Error fetching animation data:', err);
+                        document.getElementById('errorMessage').textContent = 'Error loading animation data: ' + err.message;
+                        document.getElementById('errorMessage').style.display = 'block';
+                        document.getElementById('loadingSpinner').style.display = 'none';
                     });
             </script>
         </body>
