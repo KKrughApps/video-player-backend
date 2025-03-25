@@ -674,13 +674,13 @@ app.get('/embed/:id', (req, res) => {
                 body {
                     font-family: Arial, sans-serif;
                     margin: 0;
-                    padding: 0;
+                    padding: 10px;
                     background-color: transparent;
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    height: 100vh;
-                    overflow: hidden;
+                    min-height: 100vh;
+                    overflow: auto;
                 }
                 .modal-content {
                     background-color: #fff;
@@ -828,12 +828,33 @@ app.get('/embed/:id', (req, res) => {
                 .language-item.selected {
                     background-color: #B0B0B0;
                 }
+                /* Mobile adjustments */
+                @media (max-width: 600px) {
+                    .modal-content {
+                        width: 90%;
+                        max-width: 420px;
+                    }
+                    .video-container {
+                        width: 100%;
+                        height: auto;
+                        aspect-ratio: 1 / 1; /* Maintain square aspect ratio */
+                    }
+                    .video-container video {
+                        width: 100%;
+                        height: auto;
+                        aspect-ratio: 1 / 1;
+                    }
+                    .metadata {
+                        width: 100%;
+                        max-width: 100%;
+                    }
+                }
             </style>
         </head>
         <body>
             <div class="modal-content">
                 <div class="video-container">
-                    <video id="animationVideo" controls style="width: 400px; height: 400px;"></video>
+                    <video id="animationVideo" controls style="width: 100%; height: auto;"></video>
                     <div id="loadingSpinner" class="loading-spinner"></div>
                 </div>
                 <div id="errorMessage" style="display: none; color: red;"></div>
