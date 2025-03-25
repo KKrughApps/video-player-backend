@@ -679,7 +679,13 @@ app.get('/embed/:id', (req, res) => {
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    min-height: 100vh;
+                    height: 100vh; /* Use height instead of min-height */
+                    box-sizing: border-box; /* Ensure padding is included in height */
+                    position: fixed; /* Fix the body to the viewport */
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
                     overflow: hidden; /* Prevent scrolling */
                 }
                 .modal-content {
@@ -705,18 +711,6 @@ app.get('/embed/:id', (req, res) => {
                     width: 400px;
                     height: 400px;
                     border-radius: 10px;
-                }
-                .video-container video::-webkit-media-controls {
-                    border-radius: 0 0 10px 10px;
-                }
-                .video-container video::-webkit-media-controls-panel {
-                    background-color: #484848;
-                    opacity: 0.8;
-                    border-bottom-left-radius: 10px;
-                    border-bottom-right-radius: 10px;
-                    height: 40px;
-                    display: flex;
-                    align-items: center;
                 }
                 .loading-spinner {
                     position: absolute;
