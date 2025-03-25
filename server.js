@@ -680,7 +680,7 @@ app.get('/embed/:id', (req, res) => {
                     justify-content: center;
                     align-items: center;
                     min-height: 100vh;
-                    overflow: auto;
+                    overflow: hidden; /* Prevent scrolling */
                 }
                 .modal-content {
                     background-color: #fff;
@@ -688,6 +688,8 @@ app.get('/embed/:id', (req, res) => {
                     padding-bottom: 15px;
                     border-radius: 15px;
                     width: 420px;
+                    max-height: 90vh; /* Ensure it fits within viewport */
+                    overflow-y: auto; /* Allow internal scrolling if needed */
                     position: relative;
                     text-align: center;
                     box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
@@ -715,15 +717,6 @@ app.get('/embed/:id', (req, res) => {
                     height: 40px;
                     display: flex;
                     align-items: center;
-                }
-                .video-container video::-webkit-media-controls-play-button {
-                    display: none; /* Hide native play button */
-                }
-                .video-container video::-webkit-media-controls-volume-slider {
-                    background-color: transparent;
-                }
-                .video-container video::-webkit-media-controls-fullscreen-button {
-                    background-color: transparent;
                 }
                 .loading-spinner {
                     position: absolute;
