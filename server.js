@@ -895,6 +895,10 @@ app.get('/embed/:id', (req, res) => {
                                     video.src = data.videoUrl;
                                     video.style.display = 'block';
                                     loadingSpinner.style.display = 'none';
+                                    // Force the browser to render the first frame
+                                    video.addEventListener('loadedmetadata', () => {
+                                        video.currentTime = 0.1; // Seek to 0.1 seconds to force rendering
+                                    }, { once: true });
                                 })
                                 .catch(err => {
                                     errorMessage.textContent = 'Error loading video: ' + err.message;
