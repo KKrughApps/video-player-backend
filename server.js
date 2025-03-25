@@ -450,58 +450,56 @@ async function flipVideo(inputPath, outputPath) {
 }
 
 // Helper function to pre-generate narrated videos for English and Spanish
-async function pregenerateNarratedVideos(id) {
+async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
     try {
-        const animation = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-                if (err) {
-                    console.error(`Database error: ${err.message}`);
-                    reject(err);
-                }
-                if (!row) {
-                    console.error('Animation not found');
-                    reject(new Error('Animation not found'));
-                }
-                resolve(row);
-            });
-        });
+        const audioDuration = await getAudioDuration(inputPath);
+        console.log(`Original narration duration: ${audioDuration} seconds`);
 
-        const languages = ['en', 'es']; // Only English and Spanish
-        const originalVideoPath = path.join(__dirname, animation.videoPath);
-        const videoDuration = animation.originalDuration || 38;
+        // Target duration for the spoken content (including 1-second delay, ending 2 seconds before video ends)
+        const targetSpokenDuration = videoDuration - 2; // End 2 seconds before video ends
+        const spokenDurationWithDelay = targetSpokenDuration - 1; // Subtract 1 second for the delay
+        const paddingDuration = (spokenDurationWithDelay - audioDuration); // Duration to pad in seconds
+        console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
+        console.log(`Padding duration for spoken content: ${paddingDuration} seconds`);
 
-        for (const language of languages) {
-            console.log(`Starting pre-generation for animation ${id} in language ${language}`);
-            const videoKey = `temp_video_${id}_${language}_full.mp4`;
-            const videoExists = await fileExistsInSpaces(videoKey);
-            if (!videoExists) {
-                try {
-                    console.log(`Translating text for language ${language}`);
-                    const translatedText = await translateText(animation.voiceoverText, language);
-                    console.log(`Fetching narration for language ${language}`);
-                    const narrationPath = await fetchNarration(translatedText, language);
-                    console.log(`Adjusting narration duration for language ${language}`);
-                    const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                    const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
-                    await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
-                    console.log(`Combining video and narration for language ${language}`);
-                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
-                    console.log(`Uploading video to Spaces for language ${language}`);
-                    await uploadToSpaces(combinedOutputPath, videoKey);
-                    console.log(`Pre-generated video: ${videoKey}`);
-                } catch (err) {
-                    console.error(`Failed to pre-generate video for language ${language}: ${err.message}`);
-                    console.error(err.stack);
-                    continue;
-                }
-            } else {
-                console.log(`Video already exists for animation ${id} in language ${language}: ${videoKey}`);
+        return new Promise((resolve, reject) => {
+            const ffmpegCommand = ffmpeg(inputPath)
+                .audioFilters([
+                    'adelay=1000|1000' // 1-second delay at the start
+                ]);
+
+            // Add padding if necessary
+            if (paddingDuration > 0) {
+                ffmpegCommand.audioFilters(`apad=pad_dur=${paddingDuration}`); // Pad with silence
             }
-        }
-        console.log(`Completed pre-generation for animation ${id}`);
-    } catch (error) {
-        console.error(`Error pre-generating narrated videos for animation ${id}: ${error.message}`);
-        console.error(error.stack);
+
+            ffmpegCommand
+                .output(outputPath)
+                .on('end', async () => {
+                    console.log(`Adjusted narration to target duration ${targetSpokenDuration} seconds (including 1-second delay): ${outputPath}`);
+                    try {
+                        const adjustedDuration = await getAudioDuration(outputPath);
+                        console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
+                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 0.5) {
+                            console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration})`);
+                            reject(new Error('Adjusted narration duration does not match target'));
+                        } else {
+                            resolve(outputPath);
+                        }
+                    } catch (err) {
+                        console.error(`Validation failed for adjusted narration: ${err.message}`);
+                        reject(err);
+                    }
+                })
+                .on('error', (err) => {
+                    console.error(`Error adjusting narration duration: ${err.message}`);
+                    reject(err);
+                })
+                .run();
+        });
+    } catch (err) {
+        console.error(`Error in adjustNarrationDuration: ${err.message}`);
+        throw err;
     }
 }
 
