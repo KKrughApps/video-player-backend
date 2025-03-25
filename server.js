@@ -31,15 +31,19 @@ const s3 = new AWS.S3({
 async function uploadToSpaces(filePath, key) {
     try {
         const fileContent = await fs.readFile(filePath);
-        await s3.upload({
+        console.log(`Uploading file ${filePath} to Spaces with key ${key}`);
+        const uploadResult = await s3.upload({
             Bucket: process.env.SPACES_BUCKET,
             Key: key,
             Body: fileContent,
             ACL: 'public-read'
         }).promise();
-        return `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+        const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+        console.log(`Successfully uploaded to Spaces: ${videoUrl}`);
+        return videoUrl;
     } catch (err) {
         console.error(`Error uploading to Spaces: ${err.message}`);
+        console.error(err.stack);
         throw err;
     }
 }
@@ -47,12 +51,15 @@ async function uploadToSpaces(filePath, key) {
 // Helper function to check if file exists in Spaces
 async function fileExistsInSpaces(key) {
     try {
+        console.log(`Checking if file exists in Spaces: ${key}`);
         await s3.headObject({
             Bucket: process.env.SPACES_BUCKET,
             Key: key
         }).promise();
+        console.log(`File exists in Spaces: ${key}`);
         return true;
     } catch (err) {
+        console.log(`File does not exist in Spaces: ${key} (${err.message})`);
         return false;
     }
 }
@@ -126,6 +133,7 @@ async function getVideoDuration(videoPath) {
                 reject(err);
             } else {
                 const duration = metadata.format.duration;
+                console.log(`Video duration for ${videoPath}: ${duration} seconds`);
                 resolve(duration);
             }
         });
@@ -141,6 +149,7 @@ async function getAudioDuration(audioPath) {
                 reject(err);
             } else {
                 const duration = metadata.format.duration;
+                console.log(`Audio duration for ${audioPath}: ${duration} seconds`);
                 resolve(duration);
             }
         });
@@ -148,15 +157,17 @@ async function getAudioDuration(audioPath) {
 }
 
 // Helper function to pad narration with silence to match target duration
-async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
+async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
     try {
         const audioDuration = await getAudioDuration(inputPath);
         console.log(`Original narration duration: ${audioDuration} seconds`);
-        
-        // Target duration for the narration itself (excluding the 1-second delay)
-        const narrationTargetDuration = targetDuration - 1; // 38 - 1 = 37 seconds
-        const paddingDuration = (narrationTargetDuration - audioDuration) * 1000; // Convert to milliseconds for FFmpeg
-        console.log(`Padding duration: ${paddingDuration} ms`);
+
+        // Target duration for the spoken content (including 1-second delay, ending 2 seconds before video ends)
+        const targetSpokenDuration = videoDuration - 2; // End 2 seconds before video ends
+        const spokenDurationWithDelay = targetSpokenDuration - 1; // Subtract 1 second for the delay
+        const paddingDuration = (spokenDurationWithDelay - audioDuration) * 1000; // Convert to milliseconds for FFmpeg
+        console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
+        console.log(`Padding duration for spoken content: ${paddingDuration} ms`);
 
         if (paddingDuration <= 0) {
             // If the audio is already longer than the target, just add the 1-second delay
@@ -166,7 +177,6 @@ async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
                     .output(outputPath)
                     .on('end', async () => {
                         console.log(`Added 1-second delay to narration: ${outputPath}`);
-                        // Validate the output file
                         try {
                             const adjustedDuration = await getAudioDuration(outputPath);
                             console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
@@ -188,17 +198,16 @@ async function adjustNarrationDuration(inputPath, outputPath, targetDuration) {
             ffmpeg(inputPath)
                 .audioFilters([
                     'adelay=1000|1000', // 1-second delay at the start
-                    `apad=pad_dur=${paddingDuration / 1000}` // Pad with silence at the end
+                    `apad=pad_dur=${paddingDuration / 1000}` // Pad with silence to reach targetSpokenDuration
                 ])
                 .output(outputPath)
                 .on('end', async () => {
-                    console.log(`Padded narration duration to ${targetDuration} seconds (including 1-second delay): ${outputPath}`);
-                    // Validate the output file
+                    console.log(`Padded narration duration to ${targetSpokenDuration} seconds (including 1-second delay): ${outputPath}`);
                     try {
                         const adjustedDuration = await getAudioDuration(outputPath);
                         console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
-                        if (Math.abs(adjustedDuration - targetDuration) > 1) {
-                            console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetDuration})`);
+                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 1) {
+                            console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration})`);
                             reject(new Error('Adjusted narration duration does not match target'));
                         } else {
                             resolve(outputPath);
@@ -368,7 +377,7 @@ async function fetchNarration(text, language) {
 }
 
 // Helper function to combine video and audio using ffmpeg
-async function combineVideoAndAudio(videoPath, audioPath, outputPath) {
+async function combineVideoAndAudio(videoPath, audioPath, outputPath, videoDuration) {
     try {
         return new Promise((resolve, reject) => {
             ffmpeg()
@@ -378,14 +387,20 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath) {
                 .outputOptions('-c:a aac')
                 .outputOptions('-map 0:v:0')
                 .outputOptions('-map 1:a:0')
+                .outputOptions(`-shortest`) // Ensure the output duration matches the video duration
                 .output(outputPath)
                 .on('end', async () => {
                     console.log(`FFmpeg combine completed: ${outputPath}`);
                     // Validate the output video file
                     try {
-                        const videoDuration = await getVideoDuration(outputPath);
-                        console.log(`Generated video duration: ${videoDuration} seconds`);
-                        resolve(outputPath);
+                        const finalDuration = await getVideoDuration(outputPath);
+                        console.log(`Generated video duration: ${finalDuration} seconds`);
+                        if (Math.abs(finalDuration - videoDuration) > 1) {
+                            console.error(`Final video duration (${finalDuration}) does not match expected (${videoDuration})`);
+                            reject(new Error('Final video duration does not match expected'));
+                        } else {
+                            resolve(outputPath);
+                        }
                     } catch (err) {
                         console.error(`Validation failed for generated video: ${err.message}`);
                         reject(err);
@@ -447,32 +462,40 @@ async function pregenerateNarratedVideos(id) {
 
         const languages = ['en', 'es']; // Only English and Spanish
         const originalVideoPath = path.join(__dirname, animation.videoPath);
-        const targetDuration = animation.originalDuration || 38;
+        const videoDuration = animation.originalDuration || 38;
 
         for (const language of languages) {
-            console.log(`Pre-generating narrated video for animation ${id} in language ${language}`);
+            console.log(`Starting pre-generation for animation ${id} in language ${language}`);
             const videoKey = `temp_video_${id}_${language}_full.mp4`;
             const videoExists = await fileExistsInSpaces(videoKey);
             if (!videoExists) {
                 try {
+                    console.log(`Translating text for language ${language}`);
                     const translatedText = await translateText(animation.voiceoverText, language);
+                    console.log(`Fetching narration for language ${language}`);
                     const narrationPath = await fetchNarration(translatedText, language);
+                    console.log(`Adjusting narration duration for language ${language}`);
                     const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
                     const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
-                    await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath);
+                    await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+                    console.log(`Combining video and narration for language ${language}`);
+                    await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
+                    console.log(`Uploading video to Spaces for language ${language}`);
                     await uploadToSpaces(combinedOutputPath, videoKey);
                     console.log(`Pre-generated video: ${videoKey}`);
                 } catch (err) {
                     console.error(`Failed to pre-generate video for language ${language}: ${err.message}`);
+                    console.error(err.stack);
                     continue;
                 }
             } else {
                 console.log(`Video already exists for animation ${id} in language ${language}: ${videoKey}`);
             }
         }
+        console.log(`Completed pre-generation for animation ${id}`);
     } catch (error) {
         console.error(`Error pre-generating narrated videos for animation ${id}: ${error.message}`);
+        console.error(error.stack);
     }
 }
 
@@ -793,14 +816,15 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
             const originalVideoPath = path.join(__dirname, animation.videoPath);
             const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
             const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
-            const targetDuration = animation.originalDuration || 38;
-            await adjustNarrationDuration(narrationPath, adjustedNarrationPath, targetDuration);
-            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath);
+            const videoDuration = animation.originalDuration || 38;
+            await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
+            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
             await uploadToSpaces(combinedOutputPath, videoKey);
             console.log(`Generated video: ${videoKey}`);
         }
 
         const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${videoKey}`;
+        console.log(`Serving video URL: ${videoUrl}`);
         res.json({ videoUrl });
     } catch (error) {
         console.error('Error serving narrated video:', error.message);
