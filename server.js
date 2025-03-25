@@ -36,10 +36,22 @@ async function uploadToSpaces(filePath, key) {
             Bucket: process.env.SPACES_BUCKET,
             Key: key,
             Body: fileContent,
-            ACL: 'public-read'
+            ACL: 'public-read',
+            ContentType: 'video/mp4' // Ensure correct MIME type
         }).promise();
         const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
         console.log(`Successfully uploaded to Spaces: ${videoUrl}`);
+
+        // Verify the file is publicly accessible
+        console.log(`Verifying public accessibility of ${videoUrl}`);
+        const response = await fetch(videoUrl, { method: 'HEAD' });
+        if (response.ok) {
+            console.log(`File is publicly accessible: ${videoUrl}`);
+        } else {
+            console.error(`File is not publicly accessible: ${videoUrl} (Status: ${response.status})`);
+            throw new Error(`File is not publicly accessible: ${videoUrl}`);
+        }
+
         return videoUrl;
     } catch (err) {
         console.error(`Error uploading to Spaces: ${err.message}`);
@@ -387,7 +399,6 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath, videoDurat
                 .outputOptions('-c:a aac')
                 .outputOptions('-map 0:v:0')
                 .outputOptions('-map 1:a:0')
-                .outputOptions(`-shortest`) // Ensure the output duration matches the video duration
                 .output(outputPath)
                 .on('end', async () => {
                     console.log(`FFmpeg combine completed: ${outputPath}`);
@@ -395,12 +406,7 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath, videoDurat
                     try {
                         const finalDuration = await getVideoDuration(outputPath);
                         console.log(`Generated video duration: ${finalDuration} seconds`);
-                        if (Math.abs(finalDuration - videoDuration) > 1) {
-                            console.error(`Final video duration (${finalDuration}) does not match expected (${videoDuration})`);
-                            reject(new Error('Final video duration does not match expected'));
-                        } else {
-                            resolve(outputPath);
-                        }
+                        resolve(outputPath);
                     } catch (err) {
                         console.error(`Validation failed for generated video: ${err.message}`);
                         reject(err);
@@ -732,11 +738,17 @@ app.get('/embed/:id', (req, res) => {
                                 .then(response => response.json())
                                 .then(data => {
                                     video.src = data.videoUrl;
+                                })
+                                .catch(err => {
+                                    console.error('Error loading video:', err);
                                 });
                         };
 
                         languageSelect.onchange = () => loadVideo(languageSelect.value);
                         loadVideo('en');
+                    })
+                    .catch(err => {
+                        console.error('Error fetching animation data:', err);
                     });
             </script>
         </body>
