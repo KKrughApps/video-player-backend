@@ -951,44 +951,63 @@ app.get('/tka-recovery', (req, res) => {
 
                 body {
                     font-family: 'Roboto', sans-serif;
-                    background-color: #FFFFFF; /* Brighter white background */
+                    background-color: #FFFFFF;
                     color: #333333;
                     line-height: 1.6;
                 }
 
                 /* Header Styling */
                 header {
-                    position: relative;
-                    text-align: center;
-                    padding: 50px 20px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    padding: 20px 20px;
                     background-color: #FFFFFF;
                     border-bottom: 1px solid #E0E0E0;
+                    position: relative;
                 }
 
                 header h1 {
                     font-size: 36px;
                     font-weight: 700;
                     color: #003087;
+                    text-align: center;
+                    flex: 1;
                 }
 
                 .logo-placeholder {
-                    position: absolute;
-                    top: 20px;
-                    left: 20px;
-                    width: 150px;
-                    height: 50px;
-                    background-color: #E0E0E0;
                     display: flex;
+                    flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    font-size: 14px;
+                    width: 80px;
+                    height: 80px;
+                    background-color: #FFFFFF;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                    position: absolute;
+                    left: 20px;
+                    top: 50%;
+                    transform: translateY(-50%);
+                }
+
+                .logo-placeholder .icon {
+                    width: 40px;
+                    height: 40px;
+                    background-color: #003087;
+                    border-radius: 50%;
+                    margin-bottom: 5px;
+                }
+
+                .logo-placeholder span {
+                    font-size: 12px;
                     color: #666666;
-                    border-radius: 5px;
+                    text-align: center;
                 }
 
                 /* Animation Section Styling */
                 .animation-section {
-                    padding: 40px 20px 80px 20px; /* Reduced top padding */
+                    padding: 40px 20px 80px 20px;
                     text-align: center;
                 }
 
@@ -1001,25 +1020,16 @@ app.get('/tka-recovery', (req, res) => {
 
                 .animation-container {
                     max-width: 600px;
-                    margin: 0 auto 50px auto; /* Reduced bottom margin */
-                    background-color: #E6F0FA; /* Light blue background for medical feel */
+                    margin: 0 auto 50px auto;
                     padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
                 }
 
                 .animation-container iframe {
                     width: 420px;
                     height: 510px;
-                    border: 1px solid #E0E0E0;
+                    border: none; /* Remove stroke */
                     border-radius: 5px;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-                }
-
-                .caption {
-                    font-size: 14px;
-                    color: #555555; /* Slightly darker for better contrast */
-                    margin-top: 10px;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Keep drop shadow */
                 }
 
                 /* Contact Button Styling */
@@ -1047,8 +1057,20 @@ app.get('/tka-recovery', (req, res) => {
 
                 /* Responsive Design */
                 @media (max-width: 768px) {
+                    header {
+                        flex-direction: column;
+                        padding: 10px 20px;
+                    }
+
                     header h1 {
                         font-size: 28px;
+                        margin-top: 70px; /* Space for logo */
+                    }
+
+                    .logo-placeholder {
+                        position: static;
+                        transform: none;
+                        margin-bottom: 10px;
                     }
 
                     .animation-section h2 {
@@ -1064,19 +1086,16 @@ app.get('/tka-recovery', (req, res) => {
                         padding: 12px 30px;
                         font-size: 16px;
                     }
-
-                    .logo-placeholder {
-                        width: 120px;
-                        height: 40px;
-                        font-size: 12px;
-                    }
                 }
             </style>
         </head>
         <body>
             <!-- Header -->
             <header>
-                <div class="logo-placeholder">Your Logo Here</div>
+                <div class="logo-placeholder">
+                    <div class="icon"></div>
+                    <span>Your Logo</span>
+                </div>
                 <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
             </header>
 
@@ -1085,19 +1104,16 @@ app.get('/tka-recovery', (req, res) => {
                 <div class="animation-container">
                     <h2>Week 1: Foundational Exercises</h2>
                     <iframe src="/embed/1" title="Week 1 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
-                    <p class="caption">Heel Slides – 10–15 reps, 5 sec hold</p>
                 </div>
 
                 <div class="animation-container">
                     <h2>Week 2: Stability Building</h2>
                     <iframe src="/embed/1" title="Week 2 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
-                    <p class="caption">Straight Leg Raise Prep – 10 reps, 2–3 sec hold</p>
                 </div>
 
                 <div class="animation-container">
                     <h2>Week 3: Strength Development</h2>
                     <iframe src="/embed/1" title="Week 3 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
-                    <p class="caption">Side-Lying Straight Leg Raise – 10–12 reps, 2–5 sec hold</p>
                 </div>
             </div>
 
