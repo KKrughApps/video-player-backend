@@ -961,18 +961,47 @@ app.get('/tka-recovery', (req, res) => {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    padding: 20px 20px;
+                    padding: 40px 20px;
                     background-color: #FFFFFF;
                     border-bottom: 1px solid #E0E0E0;
                     position: relative;
+                    max-width: 600px; /* Match page width */
+                    margin: 0 auto;
                 }
 
-                header h1 {
+                .header-content {
+                    text-align: center;
+                }
+
+                .header-content .tagline {
+                    font-size: 16px;
+                    font-weight: 400;
+                    color: #666666;
+                    margin-bottom: 10px;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                }
+
+                .header-content h1 {
                     font-size: 36px;
                     font-weight: 700;
                     color: #003087;
-                    text-align: center;
-                    flex: 1;
+                    margin-bottom: 10px;
+                }
+
+                .header-content .subheading {
+                    font-size: 14px;
+                    font-weight: 400;
+                    color: #003087;
+                    margin-bottom: 15px;
+                    text-transform: uppercase;
+                }
+
+                .header-content .quote {
+                    font-size: 16px;
+                    font-weight: 300;
+                    color: #555555;
+                    font-style: italic;
                 }
 
                 .logo-placeholder {
@@ -1027,15 +1056,17 @@ app.get('/tka-recovery', (req, res) => {
                 .animation-container iframe {
                     width: 420px;
                     height: 510px;
-                    border: none; /* Remove stroke */
+                    border: none;
                     border-radius: 5px;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); /* Keep drop shadow */
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
                 }
 
                 /* Contact Button Styling */
                 .contact-section {
                     text-align: center;
                     padding: 50px 20px;
+                    max-width: 600px; /* Match page width */
+                    margin: 0 auto;
                 }
 
                 .contact-button {
@@ -1059,12 +1090,24 @@ app.get('/tka-recovery', (req, res) => {
                 @media (max-width: 768px) {
                     header {
                         flex-direction: column;
-                        padding: 10px 20px;
+                        padding: 20px 20px;
                     }
 
-                    header h1 {
+                    .header-content h1 {
                         font-size: 28px;
                         margin-top: 70px; /* Space for logo */
+                    }
+
+                    .header-content .tagline {
+                        font-size: 14px;
+                    }
+
+                    .header-content .subheading {
+                        font-size: 12px;
+                    }
+
+                    .header-content .quote {
+                        font-size: 14px;
                     }
 
                     .logo-placeholder {
@@ -1096,7 +1139,12 @@ app.get('/tka-recovery', (req, res) => {
                     <div class="icon"></div>
                     <span>Your Logo</span>
                 </div>
-                <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
+                <div class="header-content">
+                    <div class="tagline">3D Patient Education and Exercise for Safer Recovery</div>
+                    <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
+                    <div class="subheading">Now Available in 32 Languages</div>
+                    <div class="quote">"Reducing Complications & Re-hospitalizations"</div>
+                </div>
             </header>
 
             <!-- Animation Sections -->
