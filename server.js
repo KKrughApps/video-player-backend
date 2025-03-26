@@ -683,7 +683,7 @@ app.get('/embed/:id', (req, res) => {
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    height: 100%; /* Use height: 100% for better Safari compatibility */
+                    height: 100%;
                     box-sizing: border-box;
                     position: fixed;
                     top: 0;
@@ -823,13 +823,13 @@ app.get('/embed/:id', (req, res) => {
                 @media (max-width: 600px) {
                     .modal-content {
                         width: 90%;
-                        min-width: 300px; /* Ensure a minimum width */
+                        min-width: 300px;
                         max-width: 420px;
                     }
                     .video-container {
                         width: 100%;
                         height: auto;
-                        min-height: 300px; /* Ensure a minimum height */
+                        min-height: 300px;
                     }
                     .video-container video {
                         width: 100%;
@@ -923,6 +923,161 @@ app.get('/embed/:id', (req, res) => {
                         document.getElementById('loadingSpinner').style.display = 'none';
                     });
             </script>
+        </body>
+        </html>
+    `);
+});
+
+// Landing page route for TKA recovery exercises
+app.get('/tka-recovery', (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta name="description" content="3D-guided exercises for Total Knee Replacement (TKA) recovery, designed to help patients regain strength and mobility.">
+            <meta property="og:title" content="3D-Guided TKA Recovery Exercises">
+            <meta property="og:description" content="Explore 3D-guided exercises for Total Knee Replacement (TKA) recovery, designed to help patients regain strength and mobility.">
+            <meta property="og:type" content="website">
+            <title>3D-Guided TKA Recovery Exercises</title>
+            <style>
+                /* Reset default styles */
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+
+                body {
+                    font-family: 'Roboto', sans-serif;
+                    background-color: #F5F5F5;
+                    color: #333333;
+                    line-height: 1.6;
+                }
+
+                /* Header Styling */
+                header {
+                    text-align: center;
+                    padding: 50px 20px;
+                    background-color: #FFFFFF;
+                    border-bottom: 1px solid #E0E0E0;
+                }
+
+                header h1 {
+                    font-size: 36px;
+                    font-weight: 700;
+                    color: #003087;
+                }
+
+                /* Animation Section Styling */
+                .animation-section {
+                    padding: 80px 20px;
+                    text-align: center;
+                }
+
+                .animation-section h2 {
+                    font-size: 24px;
+                    font-weight: 600;
+                    color: #003087;
+                    margin-bottom: 20px;
+                }
+
+                .animation-container {
+                    max-width: 600px;
+                    margin: 0 auto 100px auto; /* Space between sections */
+                }
+
+                .animation-container iframe {
+                    width: 420px; /* Match embed player width */
+                    height: 510px; /* Match embed player height */
+                    border: 1px solid #E0E0E0;
+                    border-radius: 5px;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                }
+
+                .caption {
+                    font-size: 14px;
+                    color: #666666;
+                    margin-top: 10px;
+                }
+
+                /* Contact Button Styling */
+                .contact-section {
+                    text-align: center;
+                    padding: 50px 20px;
+                }
+
+                .contact-button {
+                    display: inline-block;
+                    padding: 15px 40px;
+                    background-color: #00C4B4;
+                    color: #FFFFFF;
+                    text-decoration: none;
+                    font-size: 18px;
+                    font-weight: 600;
+                    border-radius: 25px;
+                    transition: transform 0.2s, background-color 0.2s;
+                }
+
+                .contact-button:hover {
+                    transform: scale(1.05);
+                    background-color: #00A89A;
+                }
+
+                /* Responsive Design */
+                @media (max-width: 768px) {
+                    header h1 {
+                        font-size: 28px;
+                    }
+
+                    .animation-section h2 {
+                        font-size: 20px;
+                    }
+
+                    .animation-container iframe {
+                        width: 100%; /* Scale to fit container */
+                        height: 400px; /* Adjusted height for mobile */
+                    }
+
+                    .contact-button {
+                        padding: 12px 30px;
+                        font-size: 16px;
+                    }
+                }
+            </style>
+        </head>
+        <body>
+            <!-- Header -->
+            <header>
+                <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
+            </header>
+
+            <!-- Animation Sections -->
+            <div class="animation-section">
+                <div class="animation-container">
+                    <h2>Week 1: Foundational Exercises</h2>
+                    <iframe src="/embed/1" title="Week 1 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                    <p class="caption">Heel Slides – 10–15 reps, 5 sec hold</p>
+                </div>
+
+                <div class="animation-container">
+                    <h2>Week 2: Stability Building</h2>
+                    <iframe src="/embed/2" title="Week 2 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                    <p class="caption">Straight Leg Raise Prep – 10 reps, 2–3 sec hold</p>
+                </div>
+
+                <div class="animation-container">
+                    <h2>Week 3: Strength Development</h2>
+                    <iframe src="/embed/3" title="Week 3 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                    <p class="caption">Side-Lying Straight Leg Raise – 10–12 reps, 2–5 sec hold</p>
+                </div>
+            </div>
+
+            <!-- Contact Button -->
+            <div class="contact-section">
+                <a href="mailto:your-email@example.com" class="contact-button" aria-label="Contact us to bring TKA recovery exercises to your patients">Bring This to Your Patients – Contact Us</a>
+            </div>
         </body>
         </html>
     `);
