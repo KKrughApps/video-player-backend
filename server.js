@@ -76,6 +76,21 @@ async function fileExistsInSpaces(key) {
     }
 }
 
+// Helper function to delete a file from Spaces
+async function deleteFromSpaces(key) {
+    try {
+        console.log(`Deleting file from Spaces: ${key}`);
+        await s3.deleteObject({
+            Bucket: process.env.SPACES_BUCKET,
+            Key: key
+        }).promise();
+        console.log(`Successfully deleted from Spaces: ${key}`);
+    } catch (err) {
+        console.error(`Error deleting from Spaces: ${err.message}`);
+        throw err;
+    }
+}
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -661,6 +676,86 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
     }
 });
 
+// Admin delete animation
+app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // Fetch the animation to get the video path
+        const animation = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!animation) {
+            return res.status(404).json({ error: 'Animation not found' });
+        }
+
+        // Delete the animation from the database
+        await new Promise((resolve, reject) => {
+            db.run('DELETE FROM animations WHERE id = ?', [id], function(err) {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        // Delete the associated video file from the videos directory
+        if (animation.videoPath && animation.videoPath !== 'videos/default.mp4') {
+            await fs.unlink(animation.videoPath).catch(err => console.error(`Error deleting video file: ${err.message}`));
+        }
+
+        // Delete narrated videos from DigitalOcean Spaces
+        const languages = ['en', 'es'];
+        for (const language of languages) {
+            const videoKey = `temp_video_${id}_${language}_full.mp4`;
+            if (await fileExistsInSpaces(videoKey)) {
+                await deleteFromSpaces(videoKey);
+            }
+        }
+
+        // If the animation is two-sided, delete the mirrored version as well
+        if (animation.twoSided) {
+            const mirroredName = animation.name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
+            const mirroredAnimation = await new Promise((resolve, reject) => {
+                db.get('SELECT * FROM animations WHERE name = ?', [mirroredName], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (mirroredAnimation) {
+                // Delete the mirrored animation from the database
+                await new Promise((resolve, reject) => {
+                    db.run('DELETE FROM animations WHERE id = ?', [mirroredAnimation.id], function(err) {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+
+                // Delete the mirrored video file
+                if (mirroredAnimation.videoPath && mirroredAnimation.videoPath !== 'videos/default.mp4') {
+                    await fs.unlink(mirroredAnimation.videoPath).catch(err => console.error(`Error deleting mirrored video file: ${err.message}`));
+                }
+
+                // Delete narrated videos for the mirrored animation
+                for (const language of languages) {
+                    const mirroredVideoKey = `temp_video_${mirroredAnimation.id}_${language}_full.mp4`;
+                    if (await fileExistsInSpaces(mirroredVideoKey)) {
+                        await deleteFromSpaces(mirroredVideoKey);
+                    }
+                }
+            }
+        }
+
+        res.status(200).json({ message: 'Animation deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting animation:', error);
+        res.status(500).json({ error: 'Error deleting animation' });
+    }
+});
+
 // Embed route for animations
 app.get('/embed/:id', (req, res) => {
     res.send(`
@@ -951,92 +1046,44 @@ app.get('/tka-recovery', (req, res) => {
 
                 body {
                     font-family: 'Roboto', sans-serif;
-                    background-color: #FFFFFF;
+                    background-color: #FFFFFF; /* Brighter white background */
                     color: #333333;
                     line-height: 1.6;
                 }
 
                 /* Header Styling */
                 header {
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    padding: 40px 20px;
+                    position: relative;
+                    text-align: center;
+                    padding: 50px 20px;
                     background-color: #FFFFFF;
                     border-bottom: 1px solid #E0E0E0;
-                    position: relative;
-                    max-width: 600px; /* Match page width */
-                    margin: 0 auto;
                 }
 
-                .header-content {
-                    text-align: center;
-                }
-
-                .header-content .tagline {
-                    font-size: 16px;
-                    font-weight: 400;
-                    color: #666666;
-                    margin-bottom: 10px;
-                    text-transform: uppercase;
-                    letter-spacing: 1px;
-                }
-
-                .header-content h1 {
+                header h1 {
                     font-size: 36px;
                     font-weight: 700;
                     color: #003087;
-                    margin-bottom: 10px;
-                }
-
-                .header-content .subheading {
-                    font-size: 14px;
-                    font-weight: 400;
-                    color: #003087;
-                    margin-bottom: 15px;
-                    text-transform: uppercase;
-                }
-
-                .header-content .quote {
-                    font-size: 16px;
-                    font-weight: 300;
-                    color: #555555;
-                    font-style: italic;
                 }
 
                 .logo-placeholder {
+                    position: absolute;
+                    top: 20px;
+                    left: 20px;
+                    width: 150px;
+                    height: 50px;
+                    background-color: #E0E0E0;
                     display: flex;
-                    flex-direction: column;
                     align-items: center;
                     justify-content: center;
-                    width: 80px;
-                    height: 80px;
-                    background-color: #FFFFFF;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-                    position: absolute;
-                    left: 20px;
-                    top: 50%;
-                    transform: translateY(-50%);
-                }
-
-                .logo-placeholder .icon {
-                    width: 40px;
-                    height: 40px;
-                    background-color: #003087;
-                    border-radius: 50%;
-                    margin-bottom: 5px;
-                }
-
-                .logo-placeholder span {
-                    font-size: 12px;
+                    font-size: 14px;
                     color: #666666;
-                    text-align: center;
+                    border-radius: 5px;
                 }
 
                 /* Animation Section Styling */
                 .animation-section {
-                    padding: 40px 20px 80px 20px;
+                    padding: 40px 20px 80px 20px; /* Reduced top padding */
                     text-align: center;
                 }
 
@@ -1049,24 +1096,31 @@ app.get('/tka-recovery', (req, res) => {
 
                 .animation-container {
                     max-width: 600px;
-                    margin: 0 auto 50px auto;
+                    margin: 0 auto 50px auto; /* Reduced bottom margin */
+                    background-color: #E6F0FA; /* Light blue background for medical feel */
                     padding: 20px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
                 }
 
                 .animation-container iframe {
                     width: 420px;
                     height: 510px;
-                    border: none;
+                    border: 1px solid #E0E0E0;
                     border-radius: 5px;
                     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                }
+
+                .caption {
+                    font-size: 14px;
+                    color: #555555; /* Slightly darker for better contrast */
+                    margin-top: 10px;
                 }
 
                 /* Contact Button Styling */
                 .contact-section {
                     text-align: center;
                     padding: 50px 20px;
-                    max-width: 600px; /* Match page width */
-                    margin: 0 auto;
                 }
 
                 .contact-button {
@@ -1088,32 +1142,8 @@ app.get('/tka-recovery', (req, res) => {
 
                 /* Responsive Design */
                 @media (max-width: 768px) {
-                    header {
-                        flex-direction: column;
-                        padding: 20px 20px;
-                    }
-
-                    .header-content h1 {
+                    header h1 {
                         font-size: 28px;
-                        margin-top: 70px; /* Space for logo */
-                    }
-
-                    .header-content .tagline {
-                        font-size: 14px;
-                    }
-
-                    .header-content .subheading {
-                        font-size: 12px;
-                    }
-
-                    .header-content .quote {
-                        font-size: 14px;
-                    }
-
-                    .logo-placeholder {
-                        position: static;
-                        transform: none;
-                        margin-bottom: 10px;
                     }
 
                     .animation-section h2 {
@@ -1129,22 +1159,20 @@ app.get('/tka-recovery', (req, res) => {
                         padding: 12px 30px;
                         font-size: 16px;
                     }
+
+                    .logo-placeholder {
+                        width: 120px;
+                        height: 40px;
+                        font-size: 12px;
+                    }
                 }
             </style>
         </head>
         <body>
             <!-- Header -->
             <header>
-                <div class="logo-placeholder">
-                    <div class="icon"></div>
-                    <span>Your Logo</span>
-                </div>
-                <div class="header-content">
-                    <div class="tagline">3D Patient Education and Exercise for Safer Recovery</div>
-                    <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
-                    <div class="subheading">Now Available in 32 Languages</div>
-                    <div class="quote">"Reducing Complications & Re-hospitalizations"</div>
-                </div>
+                <div class="logo-placeholder">Your Logo Here</div>
+                <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
             </header>
 
             <!-- Animation Sections -->
@@ -1152,16 +1180,19 @@ app.get('/tka-recovery', (req, res) => {
                 <div class="animation-container">
                     <h2>Week 1: Foundational Exercises</h2>
                     <iframe src="/embed/1" title="Week 1 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                    <p class="caption">Heel Slides – 10–15 reps, 5 sec hold</p>
                 </div>
 
                 <div class="animation-container">
                     <h2>Week 2: Stability Building</h2>
                     <iframe src="/embed/1" title="Week 2 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                    <p class="caption">Straight Leg Raise Prep – 10 reps, 2–3 sec hold</p>
                 </div>
 
                 <div class="animation-container">
                     <h2>Week 3: Strength Development</h2>
                     <iframe src="/embed/1" title="Week 3 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                    <p class="caption">Side-Lying Straight Leg Raise – 10–12 reps, 2–5 sec hold</p>
                 </div>
             </div>
 

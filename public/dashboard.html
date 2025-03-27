@@ -3,265 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CMS Dashboard</title>
+    <title>Admin Dashboard</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f0f0f0;
+            background-color: #f4f4f4;
         }
-        h1, h2 {
+        h1 {
             text-align: center;
+            color: #333;
         }
-        .form-container, .list-container {
-            background-color: white;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .form-container {
+            background-color: #fff;
             padding: 20px;
             border-radius: 5px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            margin: 20px auto;
-            max-width: 600px;
+            margin-bottom: 20px;
         }
-        .form-container input, .form-container textarea {
+        .form-container h2 {
+            margin-bottom: 20px;
+        }
+        .form-container label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-container input[type="text"],
+        .form-container input[type="file"],
+        .form-container textarea {
             width: 100%;
-            padding: 10px;
-            margin: 10px 0;
-            border: 1px solid #ccc;
-            border-radius: 3px;
-            box-sizing: border-box;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .form-container input[type="checkbox"] {
+            margin-right: 5px;
         }
         .form-container button {
-            width: 100%;
-            padding: 10px;
-            background-color: #007bff;
+            background-color: #4CAF50;
             color: white;
+            padding: 10px 20px;
             border: none;
-            border-radius: 3px;
+            border-radius: 4px;
             cursor: pointer;
         }
         .form-container button:hover {
-            background-color: #0056b3;
+            background-color: #45a049;
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
         }
         th, td {
-            padding: 10px;
-            border: 1px solid #ccc;
+            padding: 12px;
             text-align: left;
+            border-bottom: 1px solid #ddd;
         }
         th {
             background-color: #f4f4f4;
+            color: #333;
         }
-        button {
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+        .edit-btn, .delete-btn {
             padding: 5px 10px;
-            background-color: #007bff;
-            color: white;
             border: none;
-            border-radius: 3px;
+            border-radius: 4px;
             cursor: pointer;
+            margin-right: 5px;
         }
-        button:hover {
-            background-color: #0056b3;
-        }
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
-            justify-content: center;
-            align-items: center;
-        }
-        .modal-content {
-            background-color: #fff;
-            padding: 10px;
-            padding-bottom: 15px;
-            border-radius: 15px;
-            width: 420px;
-            position: relative;
-            text-align: center;
-        }
-        .close {
-            position: absolute;
-            top: 15px;
-            left: 15px;
-            font-size: 30px;
-            cursor: pointer;
-            color: #000;
-            background-color: #fff;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1001;
-        }
-        .video-container {
-            position: relative;
-            width: 400px;
-            height: 400px;
-            margin: 0 auto;
-            border-radius: 10px;
-        }
-        .video-container video {
-            width: 400px;
-            height: 400px;
-            border-radius: 10px;
-        }
-        .video-container video::-webkit-media-controls {
-            border-radius: 0 0 10px 10px;
-        }
-        .video-container video::-webkit-media-controls-panel {
-            background-color: #484848;
-            opacity: 0.8;
-            border-bottom-left-radius: 10px;
-            border-bottom-right-radius: 10px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-        }
-        .video-container video::-webkit-media-controls-play-button {
-            display: none; /* Hide native play button */
-        }
-        .video-container video::-webkit-media-controls-volume-slider {
-            background-color: transparent;
-        }
-        .video-container video::-webkit-media-controls-fullscreen-button {
-            background-color: transparent;
-        }
-        .loading-spinner {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3498db;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            0% { transform: translate(-50%, -50%) rotate(0deg); }
-            100% { transform: translate(-50%, -50%) rotate(360deg); }
-        }
-        .metadata {
-            background-color: #f0f8ff;
-            padding: 20px;
-            border-radius: 10px;
-            margin-top: 0;
-            width: 100%;
-            max-width: 400px;
-            box-sizing: border-box;
-            margin-left: auto;
-            margin-right: auto;
-        }
-        .metadata h2 {
-            margin-top: 0;
-            font-size: 1.5em;
-            color: #333;
-        }
-        .metadata p {
-            margin: 10px 0;
-            color: #666;
-        }
-        .metadata p strong {
-            color: #333;
-        }
-        .metadata p.reminder {
-            color: #666;
-        }
-        .language-dropdown {
-            position: absolute;
-            top: 15px;
-            right: 15px;
-            z-index: 1000;
-        }
-        .language-button {
-            background-color: #D3D3D3;
+        .edit-btn {
+            background-color: #2196F3;
             color: white;
-            border: none;
-            padding: 8px 15px;
-            cursor: pointer;
-            font-size: 16px;
-            font-family: Arial, sans-serif;
-            border-radius: 5px;
         }
-        .language-button:hover {
-            background-color: #B0B0B0;
+        .edit-btn:hover {
+            background-color: #1e88e5;
         }
-        .language-menu {
-            display: none;
-            position: absolute;
-            top: 100%;
-            right: 0;
-            background-color: #D3D3D3;
-            border: none;
-            border-radius: 5px;
-            z-index: 1000;
-            list-style: none;
-            margin: 0;
-            padding: 5px 0;
-            padding-right: 5px;
-            width: 180px;
-            box-sizing: border-box;
-        }
-        .language-menu.visible {
-            display: block;
-        }
-        .language-item {
+        .delete-btn {
+            background-color: #f44336;
             color: white;
-            padding: 5px 3px;
-            cursor: pointer;
-            font-family: Arial, sans-serif;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
         }
-        .language-item:first-child {
-            border-top-left-radius: 5px;
-            border-top-right-radius: 5px;
-        }
-        .language-item:last-child {
-            border-bottom-left-radius: 5px;
-            border-bottom-right-radius: 5px;
-        }
-        .language-item:hover {
-            background-color: #B0B0B0;
-        }
-        .language-item.selected {
-            background-color: #B0B0B0;
+        .delete-btn:hover {
+            background-color: #e53935;
         }
     </style>
 </head>
 <body>
-    <h1>CMS Dashboard</h1>
-    <div class="form-container">
-        <h2>Upload New Animation</h2>
-        <form action="/admin/add" method="POST" enctype="multipart/form-data">
-            <input type="file" name="video" accept="video/mp4" required>
-            <input type="text" name="name" placeholder="Name of Exercise/Patient Ed Video" required>
-            <textarea name="voiceoverText" placeholder="Voiceover Text (English)" required></textarea>
-            <input type="text" name="setsRepsDuration" placeholder="Sets/Reps/Duration" required>
-            <input type="text" name="reminder" placeholder="Reminder" required>
-            <label><input type="checkbox" name="twoSided"> Is this two-sided?</label>
-            <button type="submit">Upload</button>
-        </form>
-    </div>
-    <div class="list-container">
-        <h2>Animations</h2>
-        <table id="animationsTable">
+    <div class="container">
+        <h1>Admin Dashboard</h1>
+
+        <!-- Form to add new animation -->
+        <div class="form-container">
+            <h2>Add New Animation</h2>
+            <form id="animationForm" enctype="multipart/form-data">
+                <label for="name">Name:</label>
+                <input type="text" id="name" name="name" required>
+
+                <label for="video">Video File:</label>
+                <input type="file" id="video" name="video" accept="video/mp4">
+
+                <label for="voiceoverText">Voiceover Text:</label>
+                <textarea id="voiceoverText" name="voiceoverText" rows="4"></textarea>
+
+                <label for="setsRepsDuration">Sets/Reps/Duration:</label>
+                <input type="text" id="setsRepsDuration" name="setsRepsDuration">
+
+                <label for="reminder">Reminder:</label>
+                <input type="text" id="reminder" name="reminder">
+
+                <label for="twoSided">
+                    <input type="checkbox" id="twoSided" name="twoSided">
+                    Is this two-sided? (e.g., left and right versions)
+                </label>
+
+                <button type="submit">Add Animation</button>
+            </form>
+        </div>
+
+        <!-- Table to display animations -->
+        <table id="animationTable">
             <thead>
                 <tr>
                     <th>ID</th>
                     <th>Name</th>
-                    <th>Embed Code</th>
+                    <th>Sets/Reps/Duration</th>
+                    <th>Reminder</th>
+                    <th>Two-Sided</th>
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -269,123 +146,66 @@
         </table>
     </div>
 
-    <div id="previewModal" class="modal">
-        <div class="modal-content">
-            <span class="close">×</span>
-            <div class="video-container">
-                <video id="animationVideo" controls style="width: 400px; height: 400px;"></video>
-                <div id="loadingSpinner" class="loading-spinner" style="display: none;"></div>
-            </div>
-            <div id="errorMessage" style="display: none; color: red;"></div>
-            <div class="metadata" id="animationDetails"></div>
-            <div class="language-dropdown">
-                <button class="language-button">Language</button>
-                <ul id="languageMenu" class="language-menu">
-                    <li class="language-item" data-lang="en">English</li>
-                    <li class="language-item" data-lang="es">Spanish</li>
-                </ul>
-            </div>
-        </div>
-    </div>
-
     <script>
-        fetch('/admin/list')
-            .then(response => response.json())
-            .then(data => {
-                const tableBody = document.querySelector('#animationsTable tbody');
-                data.animations.forEach(animation => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${animation.id}</td>
-                        <td>${animation.name}</td>
-                        <td><input type="text" value='<iframe src="https://video-player-backend-xfmfy.ondigitalocean.app/embed/${animation.id}" width="600" height="400"></iframe>' readonly></td>
-                        <td>
-                            <button onclick="previewAnimation(${animation.id})">Play</button>
-                            <button onclick="editAnimation(${animation.id})">Edit</button>
-                        </td>
-                    `;
-                    tableBody.appendChild(row);
-                });
+        // Fetch and display animations
+        async function loadAnimations() {
+            const response = await fetch('/admin/list');
+            const data = await response.json();
+            const tableBody = document.querySelector('#animationTable tbody');
+            tableBody.innerHTML = '';
+
+            data.animations.forEach(animation => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${animation.id}</td>
+                    <td>${animation.name}</td>
+                    <td>${animation.setsRepsDuration || ''}</td>
+                    <td>${animation.reminder || ''}</td>
+                    <td>${animation.twoSided ? 'Yes' : 'No'}</td>
+                    <td>
+                        <button class="edit-btn" onclick="window.location.href='/admin/edit/${animation.id}'">Edit</button>
+                        <button class="delete-btn" onclick="deleteAnimation(${animation.id})">Delete</button>
+                    </td>
+                `;
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Handle form submission
+        document.getElementById('animationForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+
+            const response = await fetch('/admin/add', {
+                method: 'POST',
+                body: formData
             });
 
-        function previewAnimation(id) {
-            fetch(`/api/animation/${id}`)
-                .then(response => response.json())
-                .then(data => {
-                    const modal = document.getElementById('previewModal');
-                    const details = document.getElementById('animationDetails');
-                    const video = document.getElementById('animationVideo');
-                    const languageMenu = document.getElementById('languageMenu');
-                    const loadingSpinner = document.getElementById('loadingSpinner');
-                    const errorMessage = document.getElementById('errorMessage');
+            if (response.ok) {
+                e.target.reset();
+                loadAnimations();
+            } else {
+                alert('Error adding animation');
+            }
+        });
 
-                    // Reset modal state
-                    video.style.display = 'none';
-                    loadingSpinner.style.display = 'block';
-                    errorMessage.style.display = 'none';
-                    video.src = '';
-
-                    details.innerHTML = `
-                        <h2>${data.name}</h2>
-                        <p><strong>Repetitions:</strong> ${data.setsRepsDuration}</p>
-                        <p class="reminder"><strong>Reminder:</strong> ${data.reminder}</p>
-                    `;
-
-                    const languageItems = languageMenu.querySelectorAll('.language-item');
-                    languageItems.forEach(item => {
-                        item.classList.remove('selected');
-                        if (item.getAttribute('data-lang') === 'en') {
-                            item.classList.add('selected');
-                        }
-                    });
-
-                    const loadVideo = (lang) => {
-                        video.style.display = 'none';
-                        loadingSpinner.style.display = 'block';
-                        errorMessage.style.display = 'none';
-
-                        fetch(`/api/narration/${id}/${lang}/full`)
-                            .then(response => response.json())
-                            .then(data => {
-                                video.src = data.videoUrl;
-                                video.style.display = 'block';
-                                loadingSpinner.style.display = 'none';
-                            })
-                            .catch(err => {
-                                errorMessage.textContent = 'Error loading video: ' + err.message;
-                                errorMessage.style.display = 'block';
-                                loadingSpinner.style.display = 'none';
-                            });
-                    };
-
-                    languageItems.forEach(item => {
-                        item.onclick = () => {
-                            const lang = item.getAttribute('data-lang');
-                            languageItems.forEach(i => i.classList.remove('selected'));
-                            item.classList.add('selected');
-                            loadVideo(lang);
-                            languageMenu.classList.remove('visible');
-                        };
-                    });
-
-                    document.querySelector('.language-button').onclick = () => {
-                        languageMenu.classList.toggle('visible');
-                    };
-
-                    loadVideo('en');
-
-                    modal.style.display = 'flex';
+        // Handle delete action
+        async function deleteAnimation(id) {
+            if (confirm('Are you sure you want to delete this animation?')) {
+                const response = await fetch(`/admin/delete/${id}`, {
+                    method: 'DELETE'
                 });
+
+                if (response.ok) {
+                    loadAnimations();
+                } else {
+                    alert('Error deleting animation');
+                }
+            }
         }
 
-        function editAnimation(id) {
-            window.location.href = `/admin/edit/${id}`;
-        }
-
-        document.querySelector('.close').onclick = () => {
-            document.getElementById('previewModal').style.display = 'none';
-            document.getElementById('animationVideo').pause();
-        };
+        // Load animations on page load
+        loadAnimations();
     </script>
 </body>
 </html>
