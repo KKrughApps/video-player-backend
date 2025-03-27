@@ -75,12 +75,19 @@
         tr:hover {
             background-color: #f9f9f9;
         }
-        .edit-btn, .delete-btn {
+        .play-btn, .edit-btn, .delete-btn {
             padding: 5px 10px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             margin-right: 5px;
+        }
+        .play-btn {
+            background-color: #28a745;
+            color: white;
+        }
+        .play-btn:hover {
+            background-color: #218838;
         }
         .edit-btn {
             background-color: #2196F3;
@@ -163,6 +170,7 @@
                     <td>${animation.reminder || ''}</td>
                     <td>${animation.twoSided ? 'Yes' : 'No'}</td>
                     <td>
+                        <button class="play-btn" onclick="playAnimation(${animation.id})">Play</button>
                         <button class="edit-btn" onclick="window.location.href='/admin/edit/${animation.id}'">Edit</button>
                         <button class="delete-btn" onclick="deleteAnimation(${animation.id})">Delete</button>
                     </td>
@@ -188,6 +196,11 @@
                 alert('Error adding animation');
             }
         });
+
+        // Handle play action
+        function playAnimation(id) {
+            window.open(`/embed/${id}`, '_blank');
+        }
 
         // Handle delete action
         async function deleteAnimation(id) {
