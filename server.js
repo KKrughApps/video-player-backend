@@ -9,6 +9,7 @@ const multer = require('multer');
 const session = require('express-session');
 const { Translate } = require('@google-cloud/translate').v2;
 const AWS = require('aws-sdk');
+const { parse } = require('pg-connection-string'); // Add this to parse DATABASE_URL
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -27,13 +28,14 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
-// PostgreSQL Database Setup with SSL validation disabled (fallback)
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false, // Temporarily disable certificate validation
-    }
-});
+// Parse DATABASE_URL and explicitly set SSL configuration
+const dbConfig = parse(process.env.DATABASE_URL);
+dbConfig.ssl = {
+    rejectUnauthorized: false, // Force disable certificate validation
+};
+
+// PostgreSQL Database Setup with parsed configuration
+const pool = new Pool(dbConfig);
 
 // Helper function to upload a file to Spaces
 async function uploadToSpaces(filePath, key) {
