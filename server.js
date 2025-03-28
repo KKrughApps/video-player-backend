@@ -27,11 +27,8 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
-// In-memory queue for background tasks
-const backgroundTasks = new Map(); // Map to store task status: { animationId: { status, error } }
-
-// Helper function to upload to Spaces
-async function uploadToSpaces(filePath, key) {
+// Helper function to upload a file to Spaces
+async function uploadToSpaces(filePath, key, isDatabase = false) {
     try {
         const fileContent = await fs.readFile(filePath);
         console.log(`Uploading file ${filePath} to Spaces with key ${key}`);
@@ -39,23 +36,24 @@ async function uploadToSpaces(filePath, key) {
             Bucket: process.env.SPACES_BUCKET,
             Key: key,
             Body: fileContent,
-            ACL: 'public-read',
-            ContentType: 'video/mp4'
+            ACL: isDatabase ? 'private' : 'public-read', // Database file should not be publicly accessible
+            ContentType: isDatabase ? 'application/x-sqlite3' : 'video/mp4'
         }).promise();
-        const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
-        console.log(`Successfully uploaded to Spaces: ${videoUrl}`);
+        console.log(`Successfully uploaded to Spaces: ${uploadResult.Location}`);
 
-        // Verify the file is publicly accessible
-        console.log(`Verifying public accessibility of ${videoUrl}`);
-        const response = await fetch(videoUrl, { method: 'HEAD' });
-        if (response.ok) {
-            console.log(`File is publicly accessible: ${videoUrl}`);
-        } else {
-            console.error(`File is not publicly accessible: ${videoUrl} (Status: ${response.status})`);
-            throw new Error(`File is not publicly accessible: ${videoUrl}`);
+        // Verify the file is accessible (for public files)
+        if (!isDatabase) {
+            console.log(`Verifying public accessibility of ${uploadResult.Location}`);
+            const response = await fetch(uploadResult.Location, { method: 'HEAD' });
+            if (response.ok) {
+                console.log(`File is publicly accessible: ${uploadResult.Location}`);
+            } else {
+                console.error(`File is not publicly accessible: ${uploadResult.Location} (Status: ${response.status})`);
+                throw new Error(`File is not publicly accessible: ${uploadResult.Location}`);
+            }
         }
 
-        return videoUrl;
+        return uploadResult.Location;
     } catch (err) {
         console.error(`Error uploading to Spaces: ${err.message}`);
         console.error(err.stack);
@@ -63,7 +61,29 @@ async function uploadToSpaces(filePath, key) {
     }
 }
 
-// Helper function to check if file exists in Spaces
+// Helper function to download a file from Spaces
+async function downloadFromSpaces(key, filePath) {
+    try {
+        console.log(`Downloading file from Spaces with key ${key} to ${filePath}`);
+        const params = {
+            Bucket: process.env.SPACES_BUCKET,
+            Key: key
+        };
+        const data = await s3.getObject(params).promise();
+        await fs.writeFile(filePath, data.Body);
+        console.log(`Successfully downloaded file from Spaces to ${filePath}`);
+    } catch (err) {
+        if (err.code === 'NoSuchKey') {
+            console.log(`File ${key} does not exist in Spaces, proceeding with a new database file.`);
+        } else {
+            console.error(`Error downloading from Spaces: ${err.message}`);
+            console.error(err.stack);
+            throw err;
+        }
+    }
+}
+
+// Helper function to check if a file exists in Spaces
 async function fileExistsInSpaces(key) {
     try {
         console.log(`Checking if file exists in Spaces: ${key}`);
@@ -138,18 +158,19 @@ app.use((req, res, next) => {
     next();
 });
 
-// Ensure the videos and temp directories exist
+// Ensure the videos, temp, and db directories exist
 const ensureDirectories = async () => {
     try {
         await fs.mkdir(path.join(__dirname, 'videos'), { recursive: true });
         await fs.mkdir(path.join(__dirname, 'temp'), { recursive: true });
+        await fs.mkdir(path.join(__dirname, 'db'), { recursive: true });
     } catch (err) {
         console.error('Error creating directories:', err.message);
     }
 };
 
 // SQLite Database Setup
-const dbPath = path.join(__dirname, 'animations.db');
+const dbPath = path.join(__dirname, 'db', 'animations.db');
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('Error connecting to SQLite database:', err.message);
@@ -157,6 +178,52 @@ const db = new sqlite3.Database(dbPath, (err) => {
         console.log('Connected to SQLite database.');
     }
 });
+
+// Helper function to sync the database with Spaces
+const dbKey = 'animations.db';
+async function syncDatabaseToSpaces() {
+    try {
+        console.log('Syncing database to Spaces...');
+        await uploadToSpaces(dbPath, dbKey, true);
+        console.log('Database synced to Spaces successfully.');
+    } catch (err) {
+        console.error('Error syncing database to Spaces:', err.message);
+        throw err;
+    }
+}
+
+// Initialize the database and sync with Spaces on startup
+const initializeDatabase = async () => {
+    try {
+        // Download the database from Spaces if it exists
+        await downloadFromSpaces(dbKey, dbPath);
+
+        // Create the animations table if it doesn't exist
+        db.serialize(() => {
+            db.run(`
+                CREATE TABLE IF NOT EXISTS animations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    videoPath TEXT NOT NULL,
+                    voiceoverText TEXT,
+                    setsRepsDuration TEXT,
+                    reminder TEXT,
+                    twoSided INTEGER DEFAULT 0,
+                    originalDuration REAL DEFAULT 0
+                )
+            `, (err) => {
+                if (err) {
+                    console.error('Error creating animations table:', err.message);
+                } else {
+                    console.log('Animations table created or already exists.');
+                }
+            });
+        });
+    } catch (err) {
+        console.error('Error initializing database:', err.message);
+        throw err;
+    }
+};
 
 // Helper function to get video duration using ffmpeg
 async function getVideoDuration(videoPath) {
@@ -222,7 +289,6 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
                     try {
                         const adjustedDuration = await getAudioDuration(outputPath);
                         console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
-                        // Allow a larger tolerance for duration mismatch
                         if (Math.abs(adjustedDuration - targetSpokenDuration) > 1.0) {
                             console.warn(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration}), but proceeding anyway`);
                         }
@@ -311,12 +377,12 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath, videoDurat
             ffmpeg()
                 .input(videoPath)
                 .input(audioPath)
-                .outputOptions('-c:v libx264') // Re-encode video with H.264
-                .outputOptions('-preset fast') // Use a fast preset for encoding
-                .outputOptions('-c:a aac') // Ensure AAC audio
+                .outputOptions('-c:v libx264')
+                .outputOptions('-preset fast')
+                .outputOptions('-c:a aac')
                 .outputOptions('-map 0:v:0')
                 .outputOptions('-map 1:a:0')
-                .outputOptions('-movflags +faststart') // Optimize for web streaming
+                .outputOptions('-movflags +faststart')
                 .output(outputPath)
                 .on('end', async () => {
                     console.log(`FFmpeg combine completed: ${outputPath}`);
@@ -365,151 +431,6 @@ async function flipVideo(inputPath, outputPath) {
         throw error;
     }
 }
-
-// Helper function to pre-generate narrated videos for English and Spanish
-async function pregenerateNarratedVideos(id) {
-    try {
-        backgroundTasks.set(id, { status: 'processing', error: null });
-        const animation = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-                if (err) {
-                    console.error(`Database error fetching animation ${id}: ${err.message}`);
-                    reject(err);
-                }
-                if (!row) {
-                    console.error(`Animation ${id} not found`);
-                    reject(new Error('Animation not found'));
-                }
-                resolve(row);
-            });
-        });
-
-        const languages = ['en', 'es'];
-        const originalVideoPath = path.join(__dirname, animation.videoPath);
-        const videoDuration = animation.originalDuration || 38;
-
-        for (const language of languages) {
-            console.log(`Starting pre-generation for animation ${id} in language ${language}`);
-            const videoKey = `temp_video_${id}_${language}_full.mp4`;
-            const videoExists = await fileExistsInSpaces(videoKey);
-            if (videoExists) {
-                console.log(`Video already exists for animation ${id} in language ${language}: ${videoKey}, skipping pre-generation.`);
-                continue;
-            }
-
-            let narrationPath, adjustedNarrationPath, combinedOutputPath;
-            try {
-                // Step 1: Translate the voiceover text
-                console.log(`Step 1: Translating voiceover text for animation ${id} to ${language}`);
-                const translatedText = await translateText(animation.voiceoverText, language);
-                console.log(`Step 1: Successfully translated voiceover text for animation ${id} to ${language}: ${translatedText}`);
-
-                // Step 2: Fetch narration from ElevenLabs
-                console.log(`Step 2: Fetching narration for animation ${id} in ${language}`);
-                narrationPath = await fetchNarration(translatedText, language);
-                console.log(`Step 2: Successfully fetched narration for animation ${id} in ${language}: ${narrationPath}`);
-
-                // Step 3: Adjust narration duration
-                console.log(`Step 3: Adjusting narration duration for animation ${id} in ${language}`);
-                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
-                console.log(`Step 3: Successfully adjusted narration duration for animation ${id} in ${language}: ${adjustedNarrationPath}`);
-
-                // Step 4: Combine video and narration
-                console.log(`Step 4: Combining video and narration for animation ${id} in ${language}`);
-                combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
-                await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
-                console.log(`Step 4: Successfully combined video and narration for animation ${id} in ${language}: ${combinedOutputPath}`);
-
-                // Step 5: Upload to DigitalOcean Spaces
-                console.log(`Step 5: Uploading video to Spaces for animation ${id} in ${language}`);
-                await uploadToSpaces(combinedOutputPath, videoKey);
-                console.log(`Step 5: Successfully uploaded video to Spaces for animation ${id} in ${language}: ${videoKey}`);
-            } catch (err) {
-                console.error(`Failed to pre-generate video for animation ${id} in language ${language}: ${err.message}`);
-                console.error(err.stack);
-                backgroundTasks.set(id, { status: 'failed', error: err.message });
-                // Continue with the next language instead of failing the entire process
-                continue;
-            } finally {
-                // Clean up temporary files even if an error occurs
-                if (narrationPath) {
-                    await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file ${narrationPath}: ${err.message}`));
-                }
-                if (adjustedNarrationPath) {
-                    await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file ${adjustedNarrationPath}: ${err.message}`));
-                }
-                if (combinedOutputPath) {
-                    await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file ${combinedOutputPath}: ${err.message}`));
-                }
-            }
-        }
-        console.log(`Completed pre-generation for animation ${id}`);
-        backgroundTasks.set(id, { status: 'completed', error: null });
-    } catch (error) {
-        console.error(`Error pre-generating narrated videos for animation ${id}: ${error.message}`);
-        console.error(error.stack);
-        backgroundTasks.set(id, { status: 'failed', error: error.message });
-        throw error;
-    }
-}
-
-// Initialize the database
-const initializeDatabase = () => {
-    db.serialize(() => {
-        db.run(`
-            CREATE TABLE IF NOT EXISTS animations (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                videoPath TEXT NOT NULL,
-                voiceoverText TEXT,
-                setsRepsDuration TEXT,
-                reminder TEXT,
-                twoSided INTEGER DEFAULT 0,
-                originalDuration REAL DEFAULT 0
-            )
-        `, (err) => {
-            if (err) {
-                console.error('Error creating animations table:', err.message);
-            } else {
-                console.log('Animations table created or already exists.');
-            }
-        });
-
-        // Pre-generate narrated videos for existing animations on startup
-        setTimeout(async () => {
-            try {
-                const rows = await new Promise((resolve, reject) => {
-                    db.all('SELECT id FROM animations', (err, rows) => {
-                        if (err) {
-                            console.error('Error fetching animations for pre-generation:', err.message);
-                            reject(err);
-                        } else {
-                            resolve(rows);
-                        }
-                    });
-                });
-                for (const row of rows) {
-                    if (row.id) {
-                        const enVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_en_full.mp4`);
-                        const esVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_es_full.mp4`);
-                        if (enVideoExists && esVideoExists) {
-                            console.log(`Videos already exist for animation ${row.id}, skipping pre-generation.`);
-                            continue;
-                        }
-                        try {
-                            await pregenerateNarratedVideos(row.id);
-                        } catch (err) {
-                            console.error(`Error pre-generating narrated videos for animation ${row.id} on startup: ${err.message}`);
-                        }
-                    }
-                }
-            } catch (error) {
-                console.error('Error during pre-generation on startup:', error.message);
-            }
-        }, 2000);
-    });
-};
 
 // Middleware to check if user is authenticated
 const isAuthenticated = (req, res, next) => {
@@ -584,16 +505,35 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
         };
 
         const originalId = await insertAnimation(name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-        console.log(`Scheduling pre-generation of narrated videos for original animation ID ${originalId}`);
+        console.log(`Generating narrated videos for original animation ID ${originalId}`);
 
-        // Start background task for pre-generation
-        setImmediate(async () => {
-            try {
-                await pregenerateNarratedVideos(originalId);
-            } catch (err) {
-                console.error(`Background pre-generation failed for animation ${originalId}: ${err.message}`);
+        // Generate narrated videos for English and Spanish
+        const languages = ['en', 'es'];
+        for (const language of languages) {
+            console.log(`Generating video for animation ${originalId} in language ${language}`);
+            const videoKey = `temp_video_${originalId}_${language}_full.mp4`;
+            const videoExists = await fileExistsInSpaces(videoKey);
+            if (videoExists) {
+                console.log(`Video already exists for animation ${originalId} in language ${language}: ${videoKey}, skipping generation.`);
+                continue;
             }
-        });
+
+            let narrationPath, adjustedNarrationPath, combinedOutputPath;
+            try {
+                const translatedText = await translateText(voiceoverText, language);
+                narrationPath = await fetchNarration(translatedText, language);
+                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
+                combinedOutputPath = path.join(__dirname, `combined_${originalId}_${language}.mp4`);
+                await combineVideoAndAudio(videoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                await uploadToSpaces(combinedOutputPath, videoKey);
+                console.log(`Successfully generated and uploaded video for animation ${originalId} in language ${language}: ${videoKey}`);
+            } finally {
+                if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
+                if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
+            }
+        }
 
         if (twoSided) {
             console.log(`Animation ${name} is two-sided, generating mirrored version`);
@@ -604,35 +544,45 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             console.log(`Mirrored video generated at ${mirroredVideoPath}`);
 
             const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-            console.log(`Scheduling pre-generation of narrated videos for mirrored animation ID ${mirroredId}`);
+            console.log(`Generating narrated videos for mirrored animation ID ${mirroredId}`);
 
-            // Start background task for mirrored animation
-            setImmediate(async () => {
-                try {
-                    await pregenerateNarratedVideos(mirroredId);
-                } catch (err) {
-                    console.error(`Background pre-generation failed for mirrored animation ${mirroredId}: ${err.message}`);
+            for (const language of languages) {
+                console.log(`Generating video for mirrored animation ${mirroredId} in language ${language}`);
+                const videoKey = `temp_video_${mirroredId}_${language}_full.mp4`;
+                const videoExists = await fileExistsInSpaces(videoKey);
+                if (videoExists) {
+                    console.log(`Video already exists for mirrored animation ${mirroredId} in language ${language}: ${videoKey}, skipping generation.`);
+                    continue;
                 }
-            });
+
+                let narrationPath, adjustedNarrationPath, combinedOutputPath;
+                try {
+                    const translatedText = await translateText(mirroredVoiceoverText, language);
+                    narrationPath = await fetchNarration(translatedText, language);
+                    adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                    await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
+                    combinedOutputPath = path.join(__dirname, `combined_${mirroredId}_${language}.mp4`);
+                    await combineVideoAndAudio(mirroredVideoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                    await uploadToSpaces(combinedOutputPath, videoKey);
+                    console.log(`Successfully generated and uploaded video for mirrored animation ${mirroredId} in language ${language}: ${videoKey}`);
+                } finally {
+                    if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                    if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
+                    if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
+                }
+            }
         }
 
-        console.log(`Successfully scheduled animation ${name} for processing`);
-        res.status(200).json({ message: 'Animation added successfully, processing in background', animationId: originalId });
+        // Sync the database to Spaces after adding the animation
+        await syncDatabaseToSpaces();
+
+        console.log(`Successfully added animation ${name}`);
+        res.redirect('/admin/dashboard');
     } catch (error) {
         console.error(`Error adding animation ${name}: ${error.message}`);
         console.error(error.stack);
-        res.status(500).json({ error: `Error adding animation: ${error.message}` });
+        res.status(500).send(`Error adding animation: ${error.message}`);
     }
-});
-
-// Admin check background task status
-app.get('/admin/task-status/:id', isAuthenticated, (req, res) => {
-    const { id } = req.params;
-    const task = backgroundTasks.get(parseInt(id));
-    if (!task) {
-        return res.status(404).json({ error: 'Task not found' });
-    }
-    res.json(task);
 });
 
 // Admin update animation
@@ -676,16 +626,34 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
         };
 
         await updateAnimation(id, name, videoPath || animation.videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-        console.log(`Scheduling pre-generation of narrated videos for updated animation ID ${id}`);
+        console.log(`Generating narrated videos for updated animation ID ${id}`);
 
-        // Start background task for pre-generation
-        setImmediate(async () => {
-            try {
-                await pregenerateNarratedVideos(id);
-            } catch (err) {
-                console.error(`Background pre-generation failed for updated animation ${id}: ${err.message}`);
+        const languages = ['en', 'es'];
+        for (const language of languages) {
+            console.log(`Generating video for updated animation ${id} in language ${language}`);
+            const videoKey = `temp_video_${id}_${language}_full.mp4`;
+            const videoExists = await fileExistsInSpaces(videoKey);
+            if (videoExists) {
+                await deleteFromSpaces(videoKey);
+                console.log(`Deleted existing video for animation ${id} in language ${language}: ${videoKey}`);
             }
-        });
+
+            let narrationPath, adjustedNarrationPath, combinedOutputPath;
+            try {
+                const translatedText = await translateText(voiceoverText, language);
+                narrationPath = await fetchNarration(translatedText, language);
+                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
+                combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
+                await combineVideoAndAudio(videoPath || animation.videoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                await uploadToSpaces(combinedOutputPath, videoKey);
+                console.log(`Successfully generated and uploaded video for updated animation ${id} in language ${language}: ${videoKey}`);
+            } finally {
+                if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
+                if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
+            }
+        }
 
         if (twoSided) {
             console.log(`Animation ${name} is two-sided, updating mirrored version`);
@@ -710,58 +678,74 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
 
             if (mirroredAnimation) {
                 await updateAnimation(mirroredAnimation.id, mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-                console.log(`Scheduling pre-generation of narrated videos for updated mirrored animation ID ${mirroredAnimation.id}`);
+                console.log(`Generating narrated videos for updated mirrored animation ID ${mirroredAnimation.id}`);
 
-                // Start background task for mirrored animation
-                setImmediate(async () => {
-                    try {
-                        await pregenerateNarratedVideos(mirroredAnimation.id);
-                    } catch (err) {
-                        console.error(`Background pre-generation failed for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
+                for (const language of languages) {
+                    console.log(`Generating video for updated mirrored animation ${mirroredAnimation.id} in language ${language}`);
+                    const videoKey = `temp_video_${mirroredAnimation.id}_${language}_full.mp4`;
+                    const videoExists = await fileExistsInSpaces(videoKey);
+                    if (videoExists) {
+                        await deleteFromSpaces(videoKey);
+                        console.log(`Deleted existing video for mirrored animation ${mirroredAnimation.id} in language ${language}: ${videoKey}`);
                     }
-                });
+
+                    let narrationPath, adjustedNarrationPath, combinedOutputPath;
+                    try {
+                        const translatedText = await translateText(mirroredVoiceoverText, language);
+                        narrationPath = await fetchNarration(translatedText, language);
+                        adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                        await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
+                        combinedOutputPath = path.join(__dirname, `combined_${mirroredAnimation.id}_${language}.mp4`);
+                        await combineVideoAndAudio(mirroredVideoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                        await uploadToSpaces(combinedOutputPath, videoKey);
+                        console.log(`Successfully generated and uploaded video for updated mirrored animation ${mirroredAnimation.id} in language ${language}: ${videoKey}`);
+                    } finally {
+                        if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                        if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
+                        if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
+                    }
+                }
             } else {
-                const mirroredId = await new Promise((resolve, reject) => {
-                    db.run(`
-                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    `, [mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, 1, originalDuration], function(err) {
-                        if (err) {
-                            console.error(`Error inserting mirrored animation ${mirroredName}: ${err.message}`);
-                            reject(err);
-                        } else {
-                            console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${this.lastID}`);
-                            resolve(this.lastID);
-                        }
-                    });
-                });
-                console.log(`Scheduling pre-generation of narrated videos for new mirrored animation ID ${mirroredId}`);
+                const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, 1, originalDuration);
+                console.log(`Generating narrated videos for new mirrored animation ID ${mirroredId}`);
 
-                // Start background task for mirrored animation
-                setImmediate(async () => {
-                    try {
-                        await pregenerateNarratedVideos(mirroredId);
-                    } catch (err) {
-                        console.error(`Background pre-generation failed for mirrored animation ${mirroredId}: ${err.message}`);
+                for (const language of languages) {
+                    console.log(`Generating video for new mirrored animation ${mirroredId} in language ${language}`);
+                    const videoKey = `temp_video_${mirroredId}_${language}_full.mp4`;
+                    const videoExists = await fileExistsInSpaces(videoKey);
+                    if (videoExists) {
+                        console.log(`Video already exists for new mirrored animation ${mirroredId} in language ${language}: ${videoKey}, skipping generation.`);
+                        continue;
                     }
-                });
+
+                    let narrationPath, adjustedNarrationPath, combinedOutputPath;
+                    try {
+                        const translatedText = await translateText(mirroredVoiceoverText, language);
+                        narrationPath = await fetchNarration(translatedText, language);
+                        adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                        await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
+                        combinedOutputPath = path.join(__dirname, `combined_${mirroredId}_${language}.mp4`);
+                        await combineVideoAndAudio(mirroredVideoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                        await uploadToSpaces(combinedOutputPath, videoKey);
+                        console.log(`Successfully generated and uploaded video for new mirrored animation ${mirroredId} in language ${language}: ${videoKey}`);
+                    } finally {
+                        if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                        if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
+                        if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
+                    }
+                }
             }
         }
 
-        const tempDir = path.join(__dirname, 'temp');
-        const files = await fs.readdir(tempDir);
-        for (const file of files) {
-            if (file.includes(`temp_video_${id}_`)) {
-                await fs.unlink(path.join(tempDir, file)).catch(err => console.error(`Error deleting file: ${err.message}`));
-            }
-        }
+        // Sync the database to Spaces after updating the animation
+        await syncDatabaseToSpaces();
 
-        console.log(`Successfully scheduled update for animation ${id}`);
+        console.log(`Successfully updated animation ${id}`);
         res.redirect('/admin/dashboard');
     } catch (error) {
         console.error(`Error updating animation ${id}: ${error.message}`);
         console.error(error.stack);
-        res.status(500).json({ error: `Error updating animation: ${error.message}` });
+        res.status(500).send(`Error updating animation: ${error.message}`);
     }
 });
 
@@ -829,6 +813,9 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
                 }
             }
         }
+
+        // Sync the database to Spaces after deleting the animation
+        await syncDatabaseToSpaces();
 
         res.status(200).json({ message: 'Animation deleted successfully' });
     } catch (error) {
@@ -1146,156 +1133,177 @@ app.get('/embed/:id', (req, res) => {
 });
 
 // Landing page route for TKA recovery exercises
-app.get('/tka-recovery', (req, res) => {
-    res.send(`
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <meta name="description" content="3D-guided exercises for Total Knee Replacement (TKA) recovery, designed to help patients regain strength and mobility.">
-            <meta property="og:title" content="3D-Guided TKA Recovery Exercises">
-            <meta property="og:description" content="Explore 3D-guided exercises for Total Knee Replacement (TKA) recovery, designed to help patients regain strength and mobility.">
-            <meta property="og:type" content="website">
-            <title>3D-Guided TKA Recovery Exercises</title>
-            <style>
-                * {
-                    margin: 0;
-                    padding: 0;
-                    box-sizing: border-box;
+app.get('/tka-recovery', async (req, res) => {
+    try {
+        const animations = await new Promise((resolve, reject) => {
+            db.all('SELECT * FROM animations LIMIT 3', (err, rows) => {
+                if (err) {
+                    console.error('Error fetching animations for /tka-recovery:', err.message);
+                    reject(err);
+                } else {
+                    resolve(rows);
                 }
-                body {
-                    font-family: 'Roboto', sans-serif;
-                    background-color: #FFFFFF;
-                    color: #333333;
-                    line-height: 1.6;
-                }
-                header {
-                    position: relative;
-                    text-align: center;
-                    padding: 50px 20px;
-                    background-color: #FFFFFF;
-                    border-bottom: 1px solid #E0E0E0;
-                }
-                header h1 {
-                    font-size: 36px;
-                    font-weight: 700;
-                    color: #003087;
-                }
-                .logo-placeholder {
-                    position: absolute;
-                    top: 20px;
-                    left: 20px;
-                    width: 150px;
-                    height: 50px;
-                    background-color: #E0E0E0;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    font-size: 14px;
-                    color: #666666;
-                    border-radius: 5px;
-                }
-                .animation-section {
-                    padding: 40px 20px 80px 20px;
-                    text-align: center;
-                }
-                .animation-section h2 {
-                    font-size: 24px;
-                    font-weight: 600;
-                    color: #003087;
-                    margin-bottom: 20px;
-                }
-                .animation-container {
-                    max-width: 600px;
-                    margin: 0 auto 50px auto;
-                    background-color: #E6F0FA;
-                    padding: 20px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-                }
-                .animation-container iframe {
-                    width: 420px;
-                    height: 510px;
-                    border: 1px solid #E0E0E0;
-                    border-radius: 5px;
-                    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-                }
-                .caption {
-                    font-size: 14px;
-                    color: #555555;
-                    margin-top: 10px;
-                }
-                .contact-section {
-                    text-align: center;
-                    padding: 50px 20px;
-                }
-                .contact-button {
-                    display: inline-block;
-                    padding: 15px 40px;
-                    background-color: #00C4B4;
-                    color: #FFFFFF;
-                    text-decoration: none;
-                    font-size: 18px;
-                    font-weight: 600;
-                    border-radius: 25px;
-                    transition: transform 0.2s, background-color 0.2s;
-                }
-                .contact-button:hover {
-                    transform: scale(1.05);
-                    background-color: #00A89A;
-                }
-                @media (max-width: 768px) {
+            });
+        });
+
+        // Default to a placeholder if no animations are found
+        const animation1 = animations[0] || { id: 0 };
+        const animation2 = animations[1] || { id: 0 };
+        const animation3 = animations[2] || { id: 0 };
+
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <meta name="description" content="3D-guided exercises for Total Knee Replacement (TKA) recovery, designed to help patients regain strength and mobility.">
+                <meta property="og:title" content="3D-Guided TKA Recovery Exercises">
+                <meta property="og:description" content="Explore 3D-guided exercises for Total Knee Replacement (TKA) recovery, designed to help patients regain strength and mobility.">
+                <meta property="og:type" content="website">
+                <title>3D-Guided TKA Recovery Exercises</title>
+                <style>
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    body {
+                        font-family: 'Roboto', sans-serif;
+                        background-color: #FFFFFF;
+                        color: #333333;
+                        line-height: 1.6;
+                    }
+                    header {
+                        position: relative;
+                        text-align: center;
+                        padding: 50px 20px;
+                        background-color: #FFFFFF;
+                        border-bottom: 1px solid #E0E0E0;
+                    }
                     header h1 {
-                        font-size: 28px;
-                    }
-                    .animation-section h2 {
-                        font-size: 20px;
-                    }
-                    .animation-container iframe {
-                        width: 100%;
-                        height: 400px;
-                    }
-                    .contact-button {
-                        padding: 12px 30px;
-                        font-size: 16px;
+                        font-size: 36px;
+                        font-weight: 700;
+                        color: #003087;
                     }
                     .logo-placeholder {
-                        width: 120px;
-                        height: 40px;
-                        font-size: 12px;
+                        position: absolute;
+                        top: 20px;
+                        left: 20px;
+                        width: 150px;
+                        height: 50px;
+                        background-color: #E0E0E0;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 14px;
+                        color: #666666;
+                        border-radius: 5px;
                     }
-                }
-            </style>
-        </head>
-        <body>
-            <header>
-                <div class="logo-placeholder">Your Logo Here</div>
-                <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
-            </header>
-            <div class="animation-section">
-                <div class="animation-container">
-                    <h2>Week 1: Foundational Exercises</h2>
-                    <iframe src="/embed/1" title="Week 1 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
-                    <p class="caption">Heel Slides – 10–15 reps, 5 sec hold</p>
+                    .animation-section {
+                        padding: 40px 20px 80px 20px;
+                        text-align: center;
+                    }
+                    .animation-section h2 {
+                        font-size: 24px;
+                        font-weight: 600;
+                        color: #003087;
+                        margin-bottom: 20px;
+                    }
+                    .animation-container {
+                        max-width: 600px;
+                        margin: 0 auto 50px auto;
+                        background-color: #E6F0FA;
+                        padding: 20px;
+                        border-radius: 10px;
+                        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+                    }
+                    .animation-container iframe {
+                        width: 420px;
+                        height: 510px;
+                        border: 1px solid #E0E0E0;
+                        border-radius: 5px;
+                        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+                    }
+                    .caption {
+                        font-size: 14px;
+                        color: #555555;
+                        margin-top: 10px;
+                    }
+                    .contact-section {
+                        text-align: center;
+                        padding: 50px 20px;
+                    }
+                    .contact-button {
+                        display: inline-block;
+                        padding: 15px 40px;
+                        background-color: #00C4B4;
+                        color: #FFFFFF;
+                        text-decoration: none;
+                        font-size: 18px;
+                        font-weight: 600;
+                        border-radius: 25px;
+                        transition: transform 0.2s, background-color 0.2s;
+                    }
+                    .contact-button:hover {
+                        transform: scale(1.05);
+                        background-color: #00A89A;
+                    }
+                    @media (max-width: 768px) {
+                        header h1 {
+                            font-size: 28px;
+                        }
+                        .animation-section h2 {
+                            font-size: 20px;
+                        }
+                        .animation-container iframe {
+                            width: 100%;
+                            height: 400px;
+                        }
+                        .contact-button {
+                            padding: 12px 30px;
+                            font-size: 16px;
+                        }
+                        .logo-placeholder {
+                            width: 120px;
+                            height: 40px;
+                            font-size: 12px;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <header>
+                    <div class="logo-placeholder">Your Logo Here</div>
+                    <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
+                </header>
+                <div class="animation-section">
+                    <div class="animation-container">
+                        <h2>Week 1: Foundational Exercises</h2>
+                        <iframe src="/embed/${animation1.id}" title="Week 1 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                        <p class="caption">Heel Slides – 10–15 reps, 5 sec hold</p>
+                    </div>
+                    <div class="animation-container">
+                        <h2>Week 2: Stability Building</h2>
+                        <iframe src="/embed/${animation2.id}" title="Week 2 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                        <p class="caption">Straight Leg Raise Prep – 10 reps, 2–3 sec hold</p>
+                    </div>
+                    <div class="animation-container">
+                        <h2>Week 3: Strength Development</h2>
+                        <iframe src="/embed/${animation3.id}" title="Week 3 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
+                        <p class="caption">Side-Lying Straight Leg Raise – 10–12 reps, 2–5 sec hold</p>
+                    </div>
                 </div>
-                <div class="animation-container">
-                    <h2>Week 2: Stability Building</h2>
-                    <iframe src="/embed/1" title="Week 2 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
-                    <p class="caption">Straight Leg Raise Prep – 10 reps, 2–3 sec hold</p>
+                <div class="contact-section">
+                    <a href="mailto:your-email@example.com" class="contact-button" aria-label="Contact us to bring TKA recovery exercises to your patients">Bring This to Your Patients – Contact Us</a>
                 </div>
-                <div class="animation-container">
-                    <h2>Week 3: Strength Development</h2>
-                    <iframe src="/embed/1" title="Week 3 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
-                    <p class="caption">Side-Lying Straight Leg Raise – 10–12 reps, 2–5 sec hold</p>
-                </div>
-            </div>
-            <div class="contact-section">
-                <a href="mailto:your-email@example.com" class="contact-button" aria-label="Contact us to bring TKA recovery exercises to your patients">Bring This to Your Patients – Contact Us</a>
-            </div>
-        </body>
-        </html>
-    `);
+            </body>
+            </html>
+        `);
+    } catch (error) {
+        console.error('Error rendering /tka-recovery:', error.message);
+        res.status(500).send('Error loading TKA recovery page');
+    }
 });
 
 // Health check endpoint
@@ -1389,5 +1397,5 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
 const server = app.listen(port, host, async () => {
     console.log(`Server running on port ${port}`);
     await ensureDirectories();
-    initializeDatabase();
+    await initializeDatabase();
 });
