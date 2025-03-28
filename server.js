@@ -388,6 +388,9 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
                 console.log(`Uploading video to Spaces for animation ${animationId} in language ${language}`);
                 await uploadToSpaces(combinedOutputPath, videoKey);
                 console.log(`Successfully generated and uploaded video for animation ${animationId} in language ${language}: ${videoKey}`);
+            } catch (err) {
+                console.error(`Error in video generation step for animation ${animationId} in language ${language}: ${err.message}`);
+                throw err;
             } finally {
                 if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
                 if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
@@ -480,16 +483,20 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             const mirroredId = mirroredResult.rows[0].id;
             console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
-            // Generate narrated videos for mirrored animation in the background
-            generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration).catch(err => {
-                console.error(`Background task failed for mirrored animation ${mirroredId}: ${err.message}`);
-            });
+            // Generate narrated videos for mirrored animation synchronously for debugging
+            try {
+                await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+            } catch (err) {
+                console.error(`Failed to generate narrated videos for mirrored animation ${mirroredId}: ${err.message}`);
+            }
         }
 
-        // Generate narrated videos for original animation in the background
-        generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration).catch(err => {
-            console.error(`Background task failed for animation ${originalId}: ${err.message}`);
-        });
+        // Generate narrated videos for original animation synchronously for debugging
+        try {
+            await generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration);
+        } catch (err) {
+            console.error(`Failed to generate narrated videos for animation ${originalId}: ${err.message}`);
+        }
 
         console.log(`Successfully added animation ${name}`);
         res.redirect('/admin/dashboard');
@@ -577,10 +584,12 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                     console.error(`Background task failed to delete videos for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
                 });
 
-                // Generate narrated videos for mirrored animation in the background
-                generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration).catch(err => {
-                    console.error(`Background task failed for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
-                });
+                // Generate narrated videos for mirrored animation synchronously for debugging
+                try {
+                    await generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                } catch (err) {
+                    console.error(`Failed to generate narrated videos for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
+                }
             } else {
                 const mirroredResult = await pool.query(
                     `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
@@ -590,17 +599,21 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 const mirroredId = mirroredResult.rows[0].id;
                 console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
-                // Generate narrated videos for mirrored animation in the background
-                generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration).catch(err => {
-                    console.error(`Background task failed for mirrored animation ${mirroredId}: ${err.message}`);
-                });
+                // Generate narrated videos for mirrored animation synchronously for debugging
+                try {
+                    await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                } catch (err) {
+                    console.error(`Failed to generate narrated videos for mirrored animation ${mirroredId}: ${err.message}`);
+                }
             }
         }
 
-        // Generate narrated videos for original animation in the background
-        generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration).catch(err => {
-            console.error(`Background task failed for animation ${id}: ${err.message}`);
-        });
+        // Generate narrated videos for original animation synchronously for debugging
+        try {
+            await generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration);
+        } catch (err) {
+            console.error(`Failed to generate narrated videos for animation ${id}: ${err.message}`);
+        }
 
         console.log(`Successfully updated animation ${id}`);
         res.redirect('/admin/dashboard');
