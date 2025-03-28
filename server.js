@@ -354,6 +354,15 @@ async function flipVideo(inputPath, outputPath) {
 // Background task to generate narrated videos
 async function generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration) {
     try {
+        console.log(`Starting generateNarratedVideos for animation ${animationId}`);
+
+        // Check environment variables
+        if (!ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is not set');
+        if (!GOOGLE_API_KEY) throw new Error('GOOGLE_API_KEY is not set');
+        if (!process.env.SPACES_KEY || !process.env.SPACES_SECRET || !process.env.SPACES_BUCKET || !process.env.SPACES_ENDPOINT) {
+            throw new Error('DigitalOcean Spaces environment variables are not set');
+        }
+
         const languages = ['en', 'es'];
         for (const language of languages) {
             console.log(`Generating video for animation ${animationId} in language ${language}`);
@@ -366,12 +375,17 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
 
             let narrationPath, adjustedNarrationPath, combinedOutputPath;
             try {
+                console.log(`Translating text for animation ${animationId} in language ${language}`);
                 const translatedText = await translateText(voiceoverText, language);
+                console.log(`Fetching narration for animation ${animationId} in language ${language}`);
                 narrationPath = await fetchNarration(translatedText, language);
                 adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                console.log(`Adjusting narration duration for animation ${animationId} in language ${language}`);
                 await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
                 combinedOutputPath = path.join(__dirname, `combined_${animationId}_${language}.mp4`);
+                console.log(`Combining video and audio for animation ${animationId} in language ${language}`);
                 await combineVideoAndAudio(videoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                console.log(`Uploading video to Spaces for animation ${animationId} in language ${language}`);
                 await uploadToSpaces(combinedOutputPath, videoKey);
                 console.log(`Successfully generated and uploaded video for animation ${animationId} in language ${language}: ${videoKey}`);
             } finally {

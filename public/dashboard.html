@@ -7,224 +7,123 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f4f4f4;
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        .form-container {
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            margin-bottom: 20px;
-        }
-        .form-container h2 {
-            margin-bottom: 20px;
-        }
-        .form-container label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        .form-container input[type="text"],
-        .form-container input[type="file"],
-        .form-container textarea {
-            width: 100%;
-            padding: 8px;
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-        .form-container input[type="checkbox"] {
-            margin-right: 5px;
-        }
-        .form-container button {
-            background-color: #4CAF50;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .form-container button:hover {
-            background-color: #45a049;
+            margin: 20px;
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            background-color: #fff;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
         }
         th, td {
-            padding: 12px;
+            border: 1px solid #ddd;
+            padding: 8px;
             text-align: left;
-            border-bottom: 1px solid #ddd;
         }
         th {
-            background-color: #f4f4f4;
-            color: #333;
+            background-color: #f2f2f2;
         }
-        tr:hover {
-            background-color: #f9f9f9;
-        }
-        .play-btn, .edit-btn, .delete-btn {
+        button {
             padding: 5px 10px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 5px;
+            margin: 0 5px;
         }
-        .play-btn {
-            background-color: #28a745;
-            color: white;
-        }
-        .play-btn:hover {
-            background-color: #218838;
-        }
-        .edit-btn {
-            background-color: #2196F3;
-            color: white;
-        }
-        .edit-btn:hover {
-            background-color: #1e88e5;
-        }
-        .delete-btn {
-            background-color: #f44336;
-            color: white;
-        }
-        .delete-btn:hover {
-            background-color: #e53935;
+        .add-section {
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Admin Dashboard</h1>
-
-        <!-- Form to add new animation -->
-        <div class="form-container">
-            <h2>Add New Animation</h2>
-            <form id="animationForm" enctype="multipart/form-data">
-                <label for="name">Name:</label>
-                <input type="text" id="name" name="name" required>
-
-                <label for="video">Video File:</label>
-                <input type="file" id="video" name="video" accept="video/mp4">
-
-                <label for="voiceoverText">Voiceover Text:</label>
-                <textarea id="voiceoverText" name="voiceoverText" rows="4"></textarea>
-
-                <label for="setsRepsDuration">Sets/Reps/Duration:</label>
-                <input type="text" id="setsRepsDuration" name="setsRepsDuration">
-
-                <label for="reminder">Reminder:</label>
-                <input type="text" id="reminder" name="reminder">
-
-                <label for="twoSided">
-                    <input type="checkbox" id="twoSided" name="twoSided">
-                    Is this two-sided? (e.g., left and right versions)
-                </label>
-
-                <button type="submit">Add Animation</button>
-            </form>
-        </div>
-
-        <!-- Table to display animations -->
-        <table id="animationTable">
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Name</th>
-                    <th>Sets/Reps/Duration</th>
-                    <th>Reminder</th>
-                    <th>Two-Sided</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
+    <h1>Add New Animation</h1>
+    <div class="add-section">
+        <form action="/admin/add" method="POST" enctype="multipart/form-data">
+            <p>
+                <label>Name:</label><br>
+                <input type="text" name="name" required>
+            </p>
+            <p>
+                <label>Video File:</label><br>
+                <input type="file" name="video" accept="video/mp4">
+            </p>
+            <p>
+                <label>Voiceover Text:</label><br>
+                <textarea name="voiceoverText" rows="5" cols="50"></textarea>
+            </p>
+            <p>
+                <label>Sets/Reps/Duration:</label><br>
+                <input type="text" name="setsRepsDuration">
+            </p>
+            <p>
+                <label>Reminder:</label><br>
+                <input type="text" name="reminder">
+            </p>
+            <p>
+                <label><input type="checkbox" name="twoSided"> Is this two-sided? (e.g., left and right versions)</label>
+            </p>
+            <button type="submit">Add Animation</button>
+        </form>
     </div>
 
+    <h2>Existing Animations</h2>
+    <table id="animationsTable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Sets/Reps/Duration</th>
+                <th>Reminder</th>
+                <th>Two-Sided</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
     <script>
-        // Fetch and display animations
-        async function loadAnimations() {
-            const response = await fetch('/admin/list');
-            const data = await response.json();
-            const tableBody = document.querySelector('#animationTable tbody');
-            tableBody.innerHTML = '';
-
-            data.animations.forEach(animation => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${animation.id}</td>
-                    <td>${animation.name}</td>
-                    <td>${animation.setsRepsDuration || ''}</td>
-                    <td>${animation.reminder || ''}</td>
-                    <td>${animation.twoSided ? 'Yes' : 'No'}</td>
-                    <td>
-                        <button class="play-btn" onclick="playAnimation(${animation.id})">Play</button>
-                        <button class="edit-btn" onclick="window.location.href='/admin/edit/${animation.id}'">Edit</button>
-                        <button class="delete-btn" onclick="deleteAnimation(${animation.id})">Delete</button>
-                    </td>
-                `;
-                tableBody.appendChild(row);
-            });
-        }
-
-        // Handle form submission
-        document.getElementById('animationForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-
-            try {
-                const response = await fetch('/admin/add', {
-                    method: 'POST',
-                    body: formData
+        fetch('/admin/list')
+            .then(response => response.json())
+            .then(data => {
+                const tbody = document.querySelector('#animationsTable tbody');
+                data.animations.forEach(animation => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td>${animation.id}</td>
+                        <td>${animation.name}</td>
+                        <td>${animation.setsrepsduration || ''}</td>
+                        <td>${animation.reminder || ''}</td>
+                        <td>${animation.twosided ? 'Yes' : 'No'}</td>
+                        <td>
+                            <button onclick="playAnimation(${animation.id})" style="background-color: green; color: white;">Play</button>
+                            <button onclick="editAnimation(${animation.id})" style="background-color: blue; color: white;">Edit</button>
+                            <button onclick="deleteAnimation(${animation.id})" style="background-color: red; color: white;">Delete</button>
+                        </td>
+                    `;
+                    tbody.appendChild(row);
                 });
+            })
+            .catch(err => console.error('Error fetching animations:', err));
 
-                if (response.ok) {
-                    e.target.reset();
-                    loadAnimations();
-                } else {
-                    const errorText = await response.text();
-                    alert(`Error adding animation: ${errorText}`);
-                }
-            } catch (err) {
-                alert(`Error adding animation: ${err.message}`);
-            }
-        });
-
-        // Handle play action
         function playAnimation(id) {
+            if (!id || id === 'undefined') {
+                console.error('Invalid animation ID:', id);
+                return;
+            }
             window.open(`/embed/${id}`, '_blank');
         }
 
-        // Handle delete action
-        async function deleteAnimation(id) {
-            if (confirm('Are you sure you want to delete this animation?')) {
-                const response = await fetch(`/admin/delete/${id}`, {
-                    method: 'DELETE'
-                });
-
-                if (response.ok) {
-                    loadAnimations();
-                } else {
-                    const errorText = await response.text();
-                    alert(`Error deleting animation: ${errorText}`);
-                }
-            }
+        function editAnimation(id) {
+            window.location.href = `/admin/edit/${id}`;
         }
 
-        // Load animations on page load
-        loadAnimations();
+        function deleteAnimation(id) {
+            if (confirm('Are you sure you want to delete this animation?')) {
+                fetch(`/admin/delete/${id}`, { method: 'DELETE' })
+                    .then(response => response.json())
+                    .then(data => {
+                        alert(data.message);
+                        location.reload();
+                    })
+                    .catch(err => console.error('Error deleting animation:', err));
+            }
+        }
     </script>
 </body>
 </html>
