@@ -277,7 +277,7 @@ async function fetchNarration(text, language) {
                 voice_settings: {
                     stability: 0.5,
                     similarity_boost: 0.5,
-                    speed: language === 'es' ? 1.2 : 1.0, // Speed up Spanish narration by 20%
+                    speed: language === 'es' ? 1.3 : 1.0, // Increase Spanish narration speed to 1.3x
                 },
             }),
         });
@@ -308,10 +308,12 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath, videoDurat
             ffmpeg()
                 .input(videoPath)
                 .input(audioPath)
-                .outputOptions('-c:v copy')
-                .outputOptions('-c:a aac')
+                .outputOptions('-c:v libx264') // Re-encode video with H.264
+                .outputOptions('-preset fast') // Use a fast preset for encoding
+                .outputOptions('-c:a aac') // Ensure AAC audio
                 .outputOptions('-map 0:v:0')
                 .outputOptions('-map 1:a:0')
+                .outputOptions('-movflags +faststart') // Optimize for web streaming
                 .output(outputPath)
                 .on('end', async () => {
                     console.log(`FFmpeg combine completed: ${outputPath}`);
@@ -979,7 +981,7 @@ app.get('/embed/:id', (req, res) => {
         <body>
             <div class="modal-content">
                 <div class="video-container">
-                    <video id="animationVideo" playsinline webkit-playsinline preload="metadata" style="width: 100%; height: auto;"></video>
+                    <video id="animationVideo" playsinline webkit-playsinline preload="metadata" crossOrigin="anonymous" style="width: 100%; height: auto;"></video>
                     <div id="loadingSpinner" class="loading-spinner"></div>
                 </div>
                 <div id="errorMessage" style="display: none; color: red;"></div>
@@ -1017,7 +1019,17 @@ app.get('/embed/:id', (req, res) => {
                         const loadingSpinner = document.getElementById('loadingSpinner');
                         const errorMessage = document.getElementById('errorMessage');
 
+                        // Add error handler for video element
+                        video.addEventListener('error', (e) => {
+                            console.error('Video playback error:', e);
+                            errorMessage.textContent = 'Error playing video: The video failed to load or play. Please try another language or contact support.';
+                            errorMessage.style.display = 'block';
+                            loadingSpinner.classList.add('hidden');
+                        });
+
                         const loadVideo = (lang) => {
+                            video.pause(); // Pause any ongoing playback
+                            video.src = ''; // Clear the current source to cancel any ongoing requests
                             video.style.opacity = '0';
                             video.removeAttribute('controls');
                             loadingSpinner.classList.remove('hidden');
@@ -1032,9 +1044,15 @@ app.get('/embed/:id', (req, res) => {
                                     loadingSpinner.classList.add('hidden');
                                     video.addEventListener('loadedmetadata', () => {
                                         video.currentTime = 0.1;
+                                        video.play().catch(err => {
+                                            console.error('Video play error:', err);
+                                            errorMessage.textContent = 'Error playing video: Autoplay may be blocked. Please click the play button to start.';
+                                            errorMessage.style.display = 'block';
+                                        });
                                     }, { once: true });
                                 })
                                 .catch(err => {
+                                    console.error('Error fetching video:', err);
                                     errorMessage.textContent = 'Error loading video: The narrated video for this language is not available. Please try another language or contact support.';
                                     errorMessage.style.display = 'block';
                                     loadingSpinner.classList.add('hidden');
