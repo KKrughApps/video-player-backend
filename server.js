@@ -27,10 +27,13 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
-// PostgreSQL Database Setup with SSL fix
+// PostgreSQL Database Setup with detailed SSL configuration
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: {
+        rejectUnauthorized: true,
+        ca: process.env.DATABASE_CA || undefined, // Use the CA certificate if provided
+    }
 });
 
 // Helper function to upload a file to Spaces
@@ -775,7 +778,7 @@ app.get('/embed/:id', (req, res) => {
                 .language-item {
                     color: white;
                     padding: 5px 3px;
- xiii                    cursor: pointer;
+                    cursor: pointer;
                     font-family: Arial, sans-serif;
                     white-space: nowrap;
                     overflow: hidden;
