@@ -9,7 +9,7 @@ const multer = require('multer');
 const session = require('express-session');
 const { Translate } = require('@google-cloud/translate').v2;
 const AWS = require('aws-sdk');
-const { parse } = require('pg-connection-string'); // Add this to parse DATABASE_URL
+const { parse } = require('pg-connection-string');
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -31,7 +31,7 @@ const s3 = new AWS.S3({
 // Parse DATABASE_URL and explicitly set SSL configuration
 const dbConfig = parse(process.env.DATABASE_URL);
 dbConfig.ssl = {
-    rejectUnauthorized: false, // Force disable certificate validation
+    rejectUnauthorized: false,
 };
 
 // PostgreSQL Database Setup with parsed configuration
@@ -382,7 +382,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
         }
     } catch (error) {
         console.error(`Error generating narrated videos for animation ${animationId}: ${error.message}`);
-        throw error; // Re-throw the error to ensure it's caught by the caller
+        throw error;
     }
 }
 
@@ -466,12 +466,16 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             const mirroredId = mirroredResult.rows[0].id;
             console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
-            // Generate narrated videos for mirrored animation and wait for completion
-            await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+            // Generate narrated videos for mirrored animation in the background
+            generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration).catch(err => {
+                console.error(`Background task failed for mirrored animation ${mirroredId}: ${err.message}`);
+            });
         }
 
-        // Generate narrated videos for original animation and wait for completion
-        await generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration);
+        // Generate narrated videos for original animation in the background
+        generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration).catch(err => {
+            console.error(`Background task failed for animation ${originalId}: ${err.message}`);
+        });
 
         console.log(`Successfully added animation ${name}`);
         res.redirect('/admin/dashboard');
@@ -508,13 +512,18 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
         console.log(`Successfully updated animation ${id}`);
 
         const languages = ['en', 'es'];
-        for (const language of languages) {
+        const deletePromises = languages.map(async (language) => {
             const videoKey = `temp_video_${id}_${language}_full.mp4`;
             if (await fileExistsInSpaces(videoKey)) {
                 await deleteFromSpaces(videoKey);
                 console.log(`Deleted existing video for animation ${id} in language ${language}: ${videoKey}`);
             }
-        }
+        });
+
+        // Run Spaces deletion in the background
+        Promise.all(deletePromises).catch(err => {
+            console.error(`Background task failed to delete videos for animation ${id}: ${err.message}`);
+        });
 
         if (twoSided === 'on') {
             console.log(`Animation ${name} is two-sided, updating mirrored version`);
@@ -541,15 +550,23 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 );
                 console.log(`Successfully updated mirrored animation ${mirroredAnimation.id}`);
 
-                for (const language of languages) {
+                const mirroredDeletePromises = languages.map(async (language) => {
                     const videoKey = `temp_video_${mirroredAnimation.id}_${language}_full.mp4`;
                     if (await fileExistsInSpaces(videoKey)) {
                         await deleteFromSpaces(videoKey);
                         console.log(`Deleted existing video for mirrored animation ${mirroredAnimation.id} in language ${language}: ${videoKey}`);
                     }
-                }
+                });
 
-                await generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                // Run Spaces deletion for mirrored animation in the background
+                Promise.all(mirroredDeletePromises).catch(err => {
+                    console.error(`Background task failed to delete videos for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
+                });
+
+                // Generate narrated videos for mirrored animation in the background
+                generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration).catch(err => {
+                    console.error(`Background task failed for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
+                });
             } else {
                 const mirroredResult = await pool.query(
                     `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
@@ -558,11 +575,18 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 );
                 const mirroredId = mirroredResult.rows[0].id;
                 console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
-                await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+
+                // Generate narrated videos for mirrored animation in the background
+                generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration).catch(err => {
+                    console.error(`Background task failed for mirrored animation ${mirroredId}: ${err.message}`);
+                });
             }
         }
 
-        await generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration);
+        // Generate narrated videos for original animation in the background
+        generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration).catch(err => {
+            console.error(`Background task failed for animation ${id}: ${err.message}`);
+        });
 
         console.log(`Successfully updated animation ${id}`);
         res.redirect('/admin/dashboard');
@@ -590,12 +614,17 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
         }
 
         const languages = ['en', 'es'];
-        for (const language of languages) {
+        const deletePromises = languages.map(async (language) => {
             const videoKey = `temp_video_${id}_${language}_full.mp4`;
             if (await fileExistsInSpaces(videoKey)) {
                 await deleteFromSpaces(videoKey);
             }
-        }
+        });
+
+        // Run Spaces deletion in the background
+        Promise.all(deletePromises).catch(err => {
+            console.error(`Background task failed to delete videos for animation ${id}: ${err.message}`);
+        });
 
         if (animation.twoSided) {
             const mirroredName = animation.name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
@@ -609,12 +638,17 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
                     await fs.unlink(mirroredAnimation.videoPath).catch(err => console.error(`Error deleting mirrored video file: ${err.message}`));
                 }
 
-                for (const language of languages) {
+                const mirroredDeletePromises = languages.map(async (language) => {
                     const mirroredVideoKey = `temp_video_${mirroredAnimation.id}_${language}_full.mp4`;
                     if (await fileExistsInSpaces(mirroredVideoKey)) {
                         await deleteFromSpaces(mirroredVideoKey);
                     }
-                }
+                });
+
+                // Run Spaces deletion for mirrored animation in the background
+                Promise.all(mirroredDeletePromises).catch(err => {
+                    console.error(`Background task failed to delete videos for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
+                });
             }
         }
 
@@ -855,7 +889,7 @@ app.get('/embed/:id', (req, res) => {
                         const details = document.getElementById('animationDetails');
                         details.innerHTML = \`
                             <h2>\${data.name}</h2>
-                            <p><strong>Repetitions:</strong> \${data.setsRepsDuration}</p>
+                            <p><strong>Repetitions:</strong> \${data.setsrepsduration}</p>
                             <p class="reminder"><strong>Reminder:</strong> \${data.reminder}</p>
                         \`;
 
