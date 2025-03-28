@@ -184,16 +184,21 @@
             e.preventDefault();
             const formData = new FormData(e.target);
 
-            const response = await fetch('/admin/add', {
-                method: 'POST',
-                body: formData
-            });
+            try {
+                const response = await fetch('/admin/add', {
+                    method: 'POST',
+                    body: formData
+                });
 
-            if (response.ok) {
-                e.target.reset();
-                loadAnimations();
-            } else {
-                alert('Error adding animation');
+                if (response.ok) {
+                    e.target.reset();
+                    loadAnimations();
+                } else {
+                    const errorText = await response.text();
+                    alert(`Error adding animation: ${errorText}`);
+                }
+            } catch (err) {
+                alert(`Error adding animation: ${err.message}`);
             }
         });
 
@@ -212,7 +217,8 @@
                 if (response.ok) {
                     loadAnimations();
                 } else {
-                    alert('Error deleting animation');
+                    const errorText = await response.text();
+                    alert(`Error deleting animation: ${errorText}`);
                 }
             }
         }

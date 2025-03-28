@@ -92,7 +92,11 @@ async function deleteFromSpaces(key) {
 }
 
 // Middleware
-app.use(cors());
+app.use(cors({
+    origin: '*', // Allow all origins for now; tighten this in production
+    methods: ['GET', 'POST', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/videos', express.static(path.join(__dirname, 'videos')));
@@ -261,6 +265,9 @@ async function translateText(text, language) {
 async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}, language: ${language}`);
     console.log(`Using API key: ${ELEVENLABS_API_KEY ? 'Set' : 'Not set'}`);
+    if (!ELEVENLABS_API_KEY) {
+        throw new Error('ElevenLabs API key is not set in environment variables');
+    }
     const voiceId = language === 'es' ? 'pNInz6obpgDQGcFmaJgB' : 'TX3LPaxmHKxFdv7VOQHJ'; // Use a Spanish-compatible voice for 'es'
     const modelId = language === 'es' ? 'eleven_multilingual_v2' : 'eleven_monolingual_v1'; // Use multilingual model for Spanish
     try {
@@ -393,31 +400,31 @@ async function pregenerateNarratedVideos(id) {
             let narrationPath, adjustedNarrationPath, combinedOutputPath;
             try {
                 // Step 1: Translate the voiceover text
-                console.log(`Translating voiceover text for animation ${id} to ${language}`);
+                console.log(`Step 1: Translating voiceover text for animation ${id} to ${language}`);
                 const translatedText = await translateText(animation.voiceoverText, language);
-                console.log(`Successfully translated voiceover text for animation ${id} to ${language}`);
+                console.log(`Step 1: Successfully translated voiceover text for animation ${id} to ${language}: ${translatedText}`);
 
                 // Step 2: Fetch narration from ElevenLabs
-                console.log(`Fetching narration for animation ${id} in ${language}`);
+                console.log(`Step 2: Fetching narration for animation ${id} in ${language}`);
                 narrationPath = await fetchNarration(translatedText, language);
-                console.log(`Successfully fetched narration for animation ${id} in ${language}`);
+                console.log(`Step 2: Successfully fetched narration for animation ${id} in ${language}: ${narrationPath}`);
 
                 // Step 3: Adjust narration duration
-                console.log(`Adjusting narration duration for animation ${id} in ${language}`);
+                console.log(`Step 3: Adjusting narration duration for animation ${id} in ${language}`);
                 adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
                 await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
-                console.log(`Successfully adjusted narration duration for animation ${id} in ${language}`);
+                console.log(`Step 3: Successfully adjusted narration duration for animation ${id} in ${language}: ${adjustedNarrationPath}`);
 
                 // Step 4: Combine video and narration
-                console.log(`Combining video and narration for animation ${id} in ${language}`);
+                console.log(`Step 4: Combining video and narration for animation ${id} in ${language}`);
                 combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
                 await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
-                console.log(`Successfully combined video and narration for animation ${id} in ${language}`);
+                console.log(`Step 4: Successfully combined video and narration for animation ${id} in ${language}: ${combinedOutputPath}`);
 
                 // Step 5: Upload to DigitalOcean Spaces
-                console.log(`Uploading video to Spaces for animation ${id} in ${language}`);
+                console.log(`Step 5: Uploading video to Spaces for animation ${id} in ${language}`);
                 await uploadToSpaces(combinedOutputPath, videoKey);
-                console.log(`Successfully uploaded video to Spaces for animation ${id} in ${language}: ${videoKey}`);
+                console.log(`Step 5: Successfully uploaded video to Spaces for animation ${id} in ${language}: ${videoKey}`);
             } catch (err) {
                 console.error(`Failed to pre-generate video for animation ${id} in language ${language}: ${err.message}`);
                 console.error(err.stack);
@@ -591,11 +598,11 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
         }
 
         console.log(`Successfully added animation ${name} and its narrated videos`);
-        res.redirect('/admin/dashboard');
+        res.status(200).send('Animation added successfully');
     } catch (error) {
         console.error(`Error adding animation ${name}: ${error.message}`);
         console.error(error.stack);
-        res.status(500).send('Error adding animation');
+        res.status(500).send(`Error adding animation: ${error.message}`);
     }
 });
 
@@ -701,7 +708,7 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
     } catch (error) {
         console.error(`Error updating animation ${id}: ${error.message}`);
         console.error(error.stack);
-        res.status(500).send('Error updating animation');
+        res.status(500).send(`Error updating animation: ${error.message}`);
     }
 });
 
@@ -787,6 +794,12 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
 
 // Embed route for animations
 app.get('/embed/:id', (req, res) => {
+    const { id } = req.params;
+    if (!id || id === 'undefined') {
+        console.error(`Invalid ID provided for embed route: ${id}`);
+        return res.status(400).send('Invalid animation ID');
+    }
+
     res.send(`
         <!DOCTYPE html>
         <html lang="en">
@@ -978,7 +991,7 @@ app.get('/embed/:id', (req, res) => {
         <body>
             <div class="modal-content">
                 <div class="video-container">
-                    <video id="animationVideo" controls playsinline webkit-playsinline preload="metadata" style="width: 100%; height: auto;"></video>
+                    <video id="animationVideo" playsinline webkit-playsinline preload="metadata" style="width: 100%; height: auto;"></video>
                     <div id="loadingSpinner" class="loading-spinner"></div>
                 </div>
                 <div id="errorMessage" style="display: none; color: red;"></div>
@@ -993,6 +1006,14 @@ app.get('/embed/:id', (req, res) => {
             </div>
             <script>
                 const id = window.location.pathname.split('/').pop();
+                if (!id || id === 'undefined') {
+                    console.error('Invalid animation ID provided');
+                    document.getElementById('errorMessage').textContent = 'Invalid animation ID';
+                    document.getElementById('errorMessage').style.display = 'block';
+                    document.getElementById('loadingSpinner').style.display = 'none';
+                    return;
+                }
+
                 fetch(\`/api/animation/\${id}\`)
                     .then(response => response.json())
                     .then(data => {
