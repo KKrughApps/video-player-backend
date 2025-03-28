@@ -192,9 +192,15 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
         // Target duration for the spoken content (including 1-second delay, ending 2 seconds before video ends)
         const targetSpokenDuration = videoDuration - 2; // End 2 seconds before video ends
         const spokenDurationWithDelay = targetSpokenDuration - 1; // Subtract 1 second for the delay
-        const paddingDuration = (spokenDurationWithDelay - audioDuration); // Duration to pad in seconds
+        let paddingDuration = (spokenDurationWithDelay - audioDuration); // Duration to pad in seconds
         console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
-        console.log(`Padding duration for spoken content: ${paddingDuration} seconds`);
+        console.log(`Initial padding duration for spoken content: ${paddingDuration} seconds`);
+
+        // Ensure the padding duration is sufficient to reach the target
+        if (paddingDuration < 0) {
+            console.warn(`Audio duration (${audioDuration}) is longer than target (${spokenDurationWithDelay}), trimming to fit`);
+            paddingDuration = 0; // No padding needed, but we should trim if necessary
+        }
 
         return new Promise((resolve, reject) => {
             const ffmpegCommand = ffmpeg(inputPath)
@@ -256,6 +262,7 @@ async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}, language: ${language}`);
     console.log(`Using API key: ${ELEVENLABS_API_KEY}`);
     const voiceId = 'TX3LPaxmHKxFdv7VOQHJ'; // Liam's correct voice ID
+    const modelId = language === 'es' ? 'eleven_multilingual_v1' : 'eleven_monolingual_v1'; // Use multilingual model for Spanish
     try {
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
             method: 'POST',
@@ -265,7 +272,7 @@ async function fetchNarration(text, language) {
             },
             body: JSON.stringify({
                 text: text,
-                model_id: 'eleven_monolingual_v1',
+                model_id: modelId,
                 voice_settings: {
                     stability: 0.5,
                     similarity_boost: 0.5,
@@ -451,90 +458,40 @@ const initializeDatabase = () => {
             }
         });
 
-        db.get('SELECT COUNT(*) as count FROM animations', async (err, row) => {
-            if (err) {
-                console.error('Error checking animations table:', err.message);
-                return;
-            }
-
-            let defaultAnimationId = null;
-            if (row.count === 0) {
-                console.log('Inserting default animation data...');
-                const defaultVideoPath = 'videos/default.mp4';
-                let originalDuration = 0;
-                try {
-                    originalDuration = await getVideoDuration(defaultVideoPath);
-                } catch (err) {
-                    console.error('Error getting default video duration:', err.message);
-                    originalDuration = 38; // Fallback to expected duration
-                }
-                await new Promise((resolve, reject) => {
-                    db.run(`
-                        INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    `, [
-                        'Foam Roller Front of Thighs Left',
-                        defaultVideoPath,
-                        'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
-                        'Roll for 30 seconds to 1 minute.',
-                        'Keep your rolling speed slow and controlled.',
-                        0,
-                        originalDuration
-                    ], function(err) {
+        // Removed default animation insertion to prevent re-insertion after deletion
+        // Pre-generate narrated videos for existing animations on startup
+        setTimeout(async () => {
+            try {
+                const rows = await new Promise((resolve, reject) => {
+                    db.all('SELECT id FROM animations', (err, rows) => {
                         if (err) {
-                            console.error('Error inserting default animation:', err.message);
+                            console.error('Error fetching animations for pre-generation:', err.message);
                             reject(err);
                         } else {
-                            console.log('Default animation inserted successfully.');
-                            defaultAnimationId = this.lastID;
-                            resolve();
+                            resolve(rows);
                         }
                     });
                 });
-                // Pre-generate for the default animation immediately after insertion
-                if (defaultAnimationId) {
-                    try {
-                        await pregenerateNarratedVideos(defaultAnimationId);
-                    } catch (err) {
-                        console.error(`Error pre-generating narrated videos for default animation ${defaultAnimationId}: ${err.message}`);
-                    }
-                }
-            }
-
-            // Pre-generate narrated videos for all existing animations on startup
-            setTimeout(async () => {
-                try {
-                    const rows = await new Promise((resolve, reject) => {
-                        db.all('SELECT id FROM animations', (err, rows) => {
-                            if (err) {
-                                console.error('Error fetching animations for pre-generation:', err.message);
-                                reject(err);
-                            } else {
-                                resolve(rows);
-                            }
-                        });
-                    });
-                    for (const row of rows) {
-                        if (row.id) {
-                            // Check if videos already exist for this animation
-                            const enVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_en_full.mp4`);
-                            const esVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_es_full.mp4`);
-                            if (enVideoExists && esVideoExists) {
-                                console.log(`Videos already exist for animation ${row.id}, skipping pre-generation.`);
-                                continue;
-                            }
-                            try {
-                                await pregenerateNarratedVideos(row.id);
-                            } catch (err) {
-                                console.error(`Error pre-generating narrated videos for animation ${row.id} on startup: ${err.message}`);
-                            }
+                for (const row of rows) {
+                    if (row.id) {
+                        // Check if videos already exist for this animation
+                        const enVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_en_full.mp4`);
+                        const esVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_es_full.mp4`);
+                        if (enVideoExists && esVideoExists) {
+                            console.log(`Videos already exist for animation ${row.id}, skipping pre-generation.`);
+                            continue;
+                        }
+                        try {
+                            await pregenerateNarratedVideos(row.id);
+                        } catch (err) {
+                            console.error(`Error pre-generating narrated videos for animation ${row.id} on startup: ${err.message}`);
                         }
                     }
-                } catch (error) {
-                    console.error('Error during pre-generation on startup:', error.message);
                 }
-            }, 2000); // Increased delay to ensure DB operations are complete
-        });
+            } catch (error) {
+                console.error('Error during pre-generation on startup:', error.message);
+            }
+        }, 2000); // Increased delay to ensure DB operations are complete
     });
 };
 
@@ -876,6 +833,10 @@ app.get('/embed/:id', (req, res) => {
                     width: 400px;
                     height: 400px;
                     border-radius: 10px;
+                    visibility: hidden; /* Initially hidden to prevent layout shift */
+                }
+                .video-container video.loaded {
+                    visibility: visible; /* Show once loaded */
                 }
                 .loading-spinner {
                     position: absolute;
@@ -1038,7 +999,7 @@ app.get('/embed/:id', (req, res) => {
                         const errorMessage = document.getElementById('errorMessage');
 
                         const loadVideo = (lang) => {
-                            video.style.display = 'none';
+                            video.style.visibility = 'hidden'; // Hide video to prevent layout shift
                             loadingSpinner.style.display = 'block';
                             errorMessage.style.display = 'none';
 
@@ -1046,7 +1007,8 @@ app.get('/embed/:id', (req, res) => {
                                 .then(response => response.json())
                                 .then(data => {
                                     video.src = data.videoUrl;
-                                    video.style.display = 'block';
+                                    video.style.visibility = 'visible'; // Show video once loaded
+                                    video.classList.add('loaded'); // Add loaded class for styling
                                     loadingSpinner.style.display = 'none';
                                     // Force the browser to render the first frame
                                     video.addEventListener('loadedmetadata', () => {
