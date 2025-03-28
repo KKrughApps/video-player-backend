@@ -27,6 +27,9 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
+// In-memory queue for background tasks
+const backgroundTasks = new Map(); // Map to store task status: { animationId: { status, error } }
+
 // Helper function to upload to Spaces
 async function uploadToSpaces(filePath, key) {
     try {
@@ -366,6 +369,7 @@ async function flipVideo(inputPath, outputPath) {
 // Helper function to pre-generate narrated videos for English and Spanish
 async function pregenerateNarratedVideos(id) {
     try {
+        backgroundTasks.set(id, { status: 'processing', error: null });
         const animation = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
                 if (err) {
@@ -424,6 +428,7 @@ async function pregenerateNarratedVideos(id) {
             } catch (err) {
                 console.error(`Failed to pre-generate video for animation ${id} in language ${language}: ${err.message}`);
                 console.error(err.stack);
+                backgroundTasks.set(id, { status: 'failed', error: err.message });
                 // Continue with the next language instead of failing the entire process
                 continue;
             } finally {
@@ -440,9 +445,11 @@ async function pregenerateNarratedVideos(id) {
             }
         }
         console.log(`Completed pre-generation for animation ${id}`);
+        backgroundTasks.set(id, { status: 'completed', error: null });
     } catch (error) {
         console.error(`Error pre-generating narrated videos for animation ${id}: ${error.message}`);
         console.error(error.stack);
+        backgroundTasks.set(id, { status: 'failed', error: error.message });
         throw error;
     }
 }
@@ -577,8 +584,16 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
         };
 
         const originalId = await insertAnimation(name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-        console.log(`Pre-generating narrated videos for original animation ID ${originalId}`);
-        await pregenerateNarratedVideos(originalId);
+        console.log(`Scheduling pre-generation of narrated videos for original animation ID ${originalId}`);
+
+        // Start background task for pre-generation
+        setImmediate(async () => {
+            try {
+                await pregenerateNarratedVideos(originalId);
+            } catch (err) {
+                console.error(`Background pre-generation failed for animation ${originalId}: ${err.message}`);
+            }
+        });
 
         if (twoSided) {
             console.log(`Animation ${name} is two-sided, generating mirrored version`);
@@ -589,17 +604,35 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             console.log(`Mirrored video generated at ${mirroredVideoPath}`);
 
             const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-            console.log(`Pre-generating narrated videos for mirrored animation ID ${mirroredId}`);
-            await pregenerateNarratedVideos(mirroredId);
+            console.log(`Scheduling pre-generation of narrated videos for mirrored animation ID ${mirroredId}`);
+
+            // Start background task for mirrored animation
+            setImmediate(async () => {
+                try {
+                    await pregenerateNarratedVideos(mirroredId);
+                } catch (err) {
+                    console.error(`Background pre-generation failed for mirrored animation ${mirroredId}: ${err.message}`);
+                }
+            });
         }
 
-        console.log(`Successfully added animation ${name} and its narrated videos`);
-        res.status(200).send('Animation added successfully');
+        console.log(`Successfully scheduled animation ${name} for processing`);
+        res.status(200).json({ message: 'Animation added successfully, processing in background', animationId: originalId });
     } catch (error) {
         console.error(`Error adding animation ${name}: ${error.message}`);
         console.error(error.stack);
-        res.status(500).send(`Error adding animation: ${error.message}`);
+        res.status(500).json({ error: `Error adding animation: ${error.message}` });
     }
+});
+
+// Admin check background task status
+app.get('/admin/task-status/:id', isAuthenticated, (req, res) => {
+    const { id } = req.params;
+    const task = backgroundTasks.get(parseInt(id));
+    if (!task) {
+        return res.status(404).json({ error: 'Task not found' });
+    }
+    res.json(task);
 });
 
 // Admin update animation
@@ -643,8 +676,16 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
         };
 
         await updateAnimation(id, name, videoPath || animation.videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-        console.log(`Pre-generating narrated videos for updated animation ID ${id}`);
-        await pregenerateNarratedVideos(id);
+        console.log(`Scheduling pre-generation of narrated videos for updated animation ID ${id}`);
+
+        // Start background task for pre-generation
+        setImmediate(async () => {
+            try {
+                await pregenerateNarratedVideos(id);
+            } catch (err) {
+                console.error(`Background pre-generation failed for updated animation ${id}: ${err.message}`);
+            }
+        });
 
         if (twoSided) {
             console.log(`Animation ${name} is two-sided, updating mirrored version`);
@@ -669,8 +710,16 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
 
             if (mirroredAnimation) {
                 await updateAnimation(mirroredAnimation.id, mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-                console.log(`Pre-generating narrated videos for updated mirrored animation ID ${mirroredAnimation.id}`);
-                await pregenerateNarratedVideos(mirroredAnimation.id);
+                console.log(`Scheduling pre-generation of narrated videos for updated mirrored animation ID ${mirroredAnimation.id}`);
+
+                // Start background task for mirrored animation
+                setImmediate(async () => {
+                    try {
+                        await pregenerateNarratedVideos(mirroredAnimation.id);
+                    } catch (err) {
+                        console.error(`Background pre-generation failed for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
+                    }
+                });
             } else {
                 const mirroredId = await new Promise((resolve, reject) => {
                     db.run(`
@@ -686,8 +735,16 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                         }
                     });
                 });
-                console.log(`Pre-generating narrated videos for new mirrored animation ID ${mirroredId}`);
-                await pregenerateNarratedVideos(mirroredId);
+                console.log(`Scheduling pre-generation of narrated videos for new mirrored animation ID ${mirroredId}`);
+
+                // Start background task for mirrored animation
+                setImmediate(async () => {
+                    try {
+                        await pregenerateNarratedVideos(mirroredId);
+                    } catch (err) {
+                        console.error(`Background pre-generation failed for mirrored animation ${mirroredId}: ${err.message}`);
+                    }
+                });
             }
         }
 
@@ -699,12 +756,12 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
             }
         }
 
-        console.log(`Successfully updated animation ${id} and its narrated videos`);
+        console.log(`Successfully scheduled update for animation ${id}`);
         res.redirect('/admin/dashboard');
     } catch (error) {
         console.error(`Error updating animation ${id}: ${error.message}`);
         console.error(error.stack);
-        res.status(500).send(`Error updating animation: ${error.message}`);
+        res.status(500).json({ error: `Error updating animation: ${error.message}` });
     }
 });
 
