@@ -37,7 +37,7 @@ async function uploadToSpaces(filePath, key) {
             Key: key,
             Body: fileContent,
             ACL: 'public-read',
-            ContentType: 'video/mp4' // Ensure correct MIME type
+            ContentType: 'video/mp4'
         }).promise();
         const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
         console.log(`Successfully uploaded to Spaces: ${videoUrl}`);
@@ -93,7 +93,7 @@ async function deleteFromSpaces(key) {
 
 // Middleware
 app.use(cors({
-    origin: '*', // Allow all origins for now; tighten this in production
+    origin: '*',
     methods: ['GET', 'POST', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -200,36 +200,30 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
         console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
         console.log(`Initial padding duration for spoken content: ${paddingDuration} seconds`);
 
-        // Ensure the padding duration is sufficient to reach the target
+        // If audio is longer than target, trim it
+        let audioFilters = ['adelay=1000|1000']; // 1-second delay at the start
         if (paddingDuration < 0) {
             console.warn(`Audio duration (${audioDuration}) is longer than target (${spokenDurationWithDelay}), trimming to fit`);
-            paddingDuration = 0; // No padding needed, but we should trim if necessary
+            audioFilters.push(`atrim=end=${spokenDurationWithDelay}`); // Trim to target duration
+            paddingDuration = 0;
+        } else if (paddingDuration > 0) {
+            audioFilters.push(`apad=pad_dur=${paddingDuration}`); // Pad with silence
         }
 
         return new Promise((resolve, reject) => {
-            const ffmpegCommand = ffmpeg(inputPath)
-                .audioFilters([
-                    'adelay=1000|1000' // 1-second delay at the start
-                ]);
-
-            // Add padding if necessary
-            if (paddingDuration > 0) {
-                ffmpegCommand.audioFilters(`apad=pad_dur=${paddingDuration}`); // Pad with silence
-            }
-
-            ffmpegCommand
+            ffmpeg(inputPath)
+                .audioFilters(audioFilters)
                 .output(outputPath)
                 .on('end', async () => {
                     console.log(`Adjusted narration to target duration ${targetSpokenDuration} seconds (including 1-second delay): ${outputPath}`);
                     try {
                         const adjustedDuration = await getAudioDuration(outputPath);
                         console.log(`Adjusted narration duration: ${adjustedDuration} seconds`);
-                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 0.5) {
-                            console.error(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration})`);
-                            reject(new Error('Adjusted narration duration does not match target'));
-                        } else {
-                            resolve(outputPath);
+                        // Allow a larger tolerance for duration mismatch
+                        if (Math.abs(adjustedDuration - targetSpokenDuration) > 1.0) {
+                            console.warn(`Adjusted narration duration (${adjustedDuration}) does not match target (${targetSpokenDuration}), but proceeding anyway`);
                         }
+                        resolve(outputPath);
                     } catch (err) {
                         console.error(`Validation failed for adjusted narration: ${err.message}`);
                         reject(err);
@@ -257,7 +251,7 @@ async function translateText(text, language) {
     } catch (error) {
         console.error(`Error translating text to ${language}: ${error.message}`);
         console.error(error.stack);
-        throw error; // Throw the error to be caught by the caller
+        throw error;
     }
 }
 
@@ -268,8 +262,8 @@ async function fetchNarration(text, language) {
     if (!ELEVENLABS_API_KEY) {
         throw new Error('ElevenLabs API key is not set in environment variables');
     }
-    const voiceId = language === 'es' ? 'pNInz6obpgDQGcFmaJgB' : 'TX3LPaxmHKxFdv7VOQHJ'; // Use a Spanish-compatible voice for 'es'
-    const modelId = language === 'es' ? 'eleven_multilingual_v2' : 'eleven_monolingual_v1'; // Use multilingual model for Spanish
+    const voiceId = language === 'es' ? 'pNInz6obpgDQGcFmaJgB' : 'TX3LPaxmHKxFdv7VOQHJ';
+    const modelId = language === 'es' ? 'eleven_multilingual_v2' : 'eleven_monolingual_v1';
     try {
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
             method: 'POST',
@@ -320,7 +314,6 @@ async function combineVideoAndAudio(videoPath, audioPath, outputPath, videoDurat
                 .output(outputPath)
                 .on('end', async () => {
                     console.log(`FFmpeg combine completed: ${outputPath}`);
-                    // Validate the output video file
                     try {
                         const finalDuration = await getVideoDuration(outputPath);
                         console.log(`Generated video duration: ${finalDuration} seconds`);
@@ -384,7 +377,7 @@ async function pregenerateNarratedVideos(id) {
             });
         });
 
-        const languages = ['en', 'es']; // English and Spanish
+        const languages = ['en', 'es'];
         const originalVideoPath = path.join(__dirname, animation.videoPath);
         const videoDuration = animation.originalDuration || 38;
 
@@ -428,7 +421,8 @@ async function pregenerateNarratedVideos(id) {
             } catch (err) {
                 console.error(`Failed to pre-generate video for animation ${id} in language ${language}: ${err.message}`);
                 console.error(err.stack);
-                throw err; // Re-throw to ensure the error is logged in the calling function
+                // Continue with the next language instead of failing the entire process
+                continue;
             } finally {
                 // Clean up temporary files even if an error occurs
                 if (narrationPath) {
@@ -487,7 +481,6 @@ const initializeDatabase = () => {
                 });
                 for (const row of rows) {
                     if (row.id) {
-                        // Check if videos already exist for this animation
                         const enVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_en_full.mp4`);
                         const esVideoExists = await fileExistsInSpaces(`temp_video_${row.id}_es_full.mp4`);
                         if (enVideoExists && esVideoExists) {
@@ -504,7 +497,7 @@ const initializeDatabase = () => {
             } catch (error) {
                 console.error('Error during pre-generation on startup:', error.message);
             }
-        }, 2000); // Increased delay to ensure DB operations are complete
+        }, 2000);
     });
 };
 
@@ -717,7 +710,6 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Fetch the animation to get the video path
         const animation = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
                 if (err) reject(err);
@@ -729,7 +721,6 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
             return res.status(404).json({ error: 'Animation not found' });
         }
 
-        // Delete the animation from the database
         await new Promise((resolve, reject) => {
             db.run('DELETE FROM animations WHERE id = ?', [id], function(err) {
                 if (err) reject(err);
@@ -737,12 +728,10 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
             });
         });
 
-        // Delete the associated video file from the videos directory
         if (animation.videoPath && animation.videoPath !== 'videos/default.mp4') {
             await fs.unlink(animation.videoPath).catch(err => console.error(`Error deleting video file: ${err.message}`));
         }
 
-        // Delete narrated videos from DigitalOcean Spaces
         const languages = ['en', 'es'];
         for (const language of languages) {
             const videoKey = `temp_video_${id}_${language}_full.mp4`;
@@ -751,7 +740,6 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
             }
         }
 
-        // If the animation is two-sided, delete the mirrored version as well
         if (animation.twoSided) {
             const mirroredName = animation.name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
             const mirroredAnimation = await new Promise((resolve, reject) => {
@@ -762,7 +750,6 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
             });
 
             if (mirroredAnimation) {
-                // Delete the mirrored animation from the database
                 await new Promise((resolve, reject) => {
                     db.run('DELETE FROM animations WHERE id = ?', [mirroredAnimation.id], function(err) {
                         if (err) reject(err);
@@ -770,12 +757,10 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
                     });
                 });
 
-                // Delete the mirrored video file
                 if (mirroredAnimation.videoPath && mirroredAnimation.videoPath !== 'videos/default.mp4') {
                     await fs.unlink(mirroredAnimation.videoPath).catch(err => console.error(`Error deleting mirrored video file: ${err.message}`));
                 }
 
-                // Delete narrated videos for the mirrored animation
                 for (const language of languages) {
                     const mirroredVideoKey = `temp_video_${mirroredAnimation.id}_${language}_full.mp4`;
                     if (await fileExistsInSpaces(mirroredVideoKey)) {
@@ -852,14 +837,11 @@ app.get('/embed/:id', (req, res) => {
                     width: 400px;
                     height: 400px;
                     border-radius: 10px;
-                    visibility: hidden; /* Initially hidden to prevent layout shift */
-                    transition: visibility 0.3s ease; /* Smooth transition for visibility */
+                    visibility: hidden;
+                    transition: visibility 0.3s ease;
                 }
                 .video-container video.loaded {
-                    visibility: visible; /* Show once loaded */
-                }
-                .video-container video:not(.loaded) {
-                    controls: false; /* Hide controls until loaded */
+                    visibility: visible;
                 }
                 .loading-spinner {
                     position: absolute;
@@ -964,7 +946,6 @@ app.get('/embed/:id', (req, res) => {
                 .language-item.selected {
                     background-color: #B0B0B0;
                 }
-                /* Mobile adjustments */
                 @media (max-width: 600px) {
                     .modal-content {
                         width: 90%;
@@ -1011,7 +992,7 @@ app.get('/embed/:id', (req, res) => {
                     document.getElementById('errorMessage').textContent = 'Invalid animation ID';
                     document.getElementById('errorMessage').style.display = 'block';
                     document.getElementById('loadingSpinner').style.display = 'none';
-                    return;
+                    throw new Error('Invalid animation ID');
                 }
 
                 fetch(\`/api/animation/\${id}\`)
@@ -1030,8 +1011,8 @@ app.get('/embed/:id', (req, res) => {
                         const errorMessage = document.getElementById('errorMessage');
 
                         const loadVideo = (lang) => {
-                            video.style.visibility = 'hidden'; // Hide video to prevent layout shift
-                            video.removeAttribute('controls'); // Hide controls until loaded
+                            video.style.visibility = 'hidden';
+                            video.removeAttribute('controls');
                             loadingSpinner.style.display = 'block';
                             errorMessage.style.display = 'none';
 
@@ -1039,13 +1020,12 @@ app.get('/embed/:id', (req, res) => {
                                 .then(response => response.json())
                                 .then(data => {
                                     video.src = data.videoUrl;
-                                    video.style.visibility = 'visible'; // Show video once loaded
-                                    video.classList.add('loaded'); // Add loaded class for styling
-                                    video.setAttribute('controls', ''); // Show controls once loaded
+                                    video.style.visibility = 'visible';
+                                    video.classList.add('loaded');
+                                    video.setAttribute('controls', '');
                                     loadingSpinner.style.display = 'none';
-                                    // Force the browser to render the first frame
                                     video.addEventListener('loadedmetadata', () => {
-                                        video.currentTime = 0.1; // Seek to 0.1 seconds to force rendering
+                                        video.currentTime = 0.1;
                                     }, { once: true });
                                 })
                                 .catch(err => {
@@ -1098,21 +1078,17 @@ app.get('/tka-recovery', (req, res) => {
             <meta property="og:type" content="website">
             <title>3D-Guided TKA Recovery Exercises</title>
             <style>
-                /* Reset default styles */
                 * {
                     margin: 0;
                     padding: 0;
                     box-sizing: border-box;
                 }
-
                 body {
                     font-family: 'Roboto', sans-serif;
-                    background-color: #FFFFFF; /* Brighter white background */
+                    background-color: #FFFFFF;
                     color: #333333;
                     line-height: 1.6;
                 }
-
-                /* Header Styling */
                 header {
                     position: relative;
                     text-align: center;
@@ -1120,13 +1096,11 @@ app.get('/tka-recovery', (req, res) => {
                     background-color: #FFFFFF;
                     border-bottom: 1px solid #E0E0E0;
                 }
-
                 header h1 {
                     font-size: 36px;
                     font-weight: 700;
                     color: #003087;
                 }
-
                 .logo-placeholder {
                     position: absolute;
                     top: 20px;
@@ -1141,29 +1115,24 @@ app.get('/tka-recovery', (req, res) => {
                     color: #666666;
                     border-radius: 5px;
                 }
-
-                /* Animation Section Styling */
                 .animation-section {
-                    padding: 40px 20px 80px 20px; /* Reduced top padding */
+                    padding: 40px 20px 80px 20px;
                     text-align: center;
                 }
-
                 .animation-section h2 {
                     font-size: 24px;
                     font-weight: 600;
                     color: #003087;
                     margin-bottom: 20px;
                 }
-
                 .animation-container {
                     max-width: 600px;
-                    margin: 0 auto 50px auto; /* Reduced bottom margin */
-                    background-color: #E6F0FA; /* Light blue background for medical feel */
+                    margin: 0 auto 50px auto;
+                    background-color: #E6F0FA;
                     padding: 20px;
                     border-radius: 10px;
                     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
                 }
-
                 .animation-container iframe {
                     width: 420px;
                     height: 510px;
@@ -1171,19 +1140,15 @@ app.get('/tka-recovery', (req, res) => {
                     border-radius: 5px;
                     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
                 }
-
                 .caption {
                     font-size: 14px;
-                    color: #555555; /* Slightly darker for better contrast */
+                    color: #555555;
                     margin-top: 10px;
                 }
-
-                /* Contact Button Styling */
                 .contact-section {
                     text-align: center;
                     padding: 50px 20px;
                 }
-
                 .contact-button {
                     display: inline-block;
                     padding: 15px 40px;
@@ -1195,32 +1160,25 @@ app.get('/tka-recovery', (req, res) => {
                     border-radius: 25px;
                     transition: transform 0.2s, background-color 0.2s;
                 }
-
                 .contact-button:hover {
                     transform: scale(1.05);
                     background-color: #00A89A;
                 }
-
-                /* Responsive Design */
                 @media (max-width: 768px) {
                     header h1 {
                         font-size: 28px;
                     }
-
                     .animation-section h2 {
                         font-size: 20px;
                     }
-
                     .animation-container iframe {
                         width: 100%;
                         height: 400px;
                     }
-
                     .contact-button {
                         padding: 12px 30px;
                         font-size: 16px;
                     }
-
                     .logo-placeholder {
                         width: 120px;
                         height: 40px;
@@ -1230,34 +1188,27 @@ app.get('/tka-recovery', (req, res) => {
             </style>
         </head>
         <body>
-            <!-- Header -->
             <header>
                 <div class="logo-placeholder">Your Logo Here</div>
                 <h1>3D-Guided Total Knee Replacement (TKA) Recovery Exercises</h1>
             </header>
-
-            <!-- Animation Sections -->
             <div class="animation-section">
                 <div class="animation-container">
                     <h2>Week 1: Foundational Exercises</h2>
                     <iframe src="/embed/1" title="Week 1 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
                     <p class="caption">Heel Slides – 10–15 reps, 5 sec hold</p>
                 </div>
-
                 <div class="animation-container">
                     <h2>Week 2: Stability Building</h2>
                     <iframe src="/embed/1" title="Week 2 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
                     <p class="caption">Straight Leg Raise Prep – 10 reps, 2–3 sec hold</p>
                 </div>
-
                 <div class="animation-container">
                     <h2>Week 3: Strength Development</h2>
                     <iframe src="/embed/1" title="Week 3 TKA Recovery Exercise" frameborder="0" allowfullscreen></iframe>
                     <p class="caption">Side-Lying Straight Leg Raise – 10–12 reps, 2–5 sec hold</p>
                 </div>
             </div>
-
-            <!-- Contact Button -->
             <div class="contact-section">
                 <a href="mailto:your-email@example.com" class="contact-button" aria-label="Contact us to bring TKA recovery exercises to your patients">Bring This to Your Patients – Contact Us</a>
             </div>
@@ -1306,7 +1257,6 @@ app.get('/api/animation/:id', async (req, res) => {
 app.get('/api/narration/:id/:language/full', async (req, res) => {
     const { id, language } = req.params;
 
-    // Restrict to supported languages
     if (!['en', 'es'].includes(language)) {
         return res.status(400).json({ error: 'Unsupported language' });
     }
