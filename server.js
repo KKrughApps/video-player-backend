@@ -260,9 +260,9 @@ async function translateText(text, language) {
 // Helper function to fetch narration from ElevenLabs
 async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}, language: ${language}`);
-    console.log(`Using API key: ${ELEVENLABS_API_KEY}`);
-    const voiceId = 'TX3LPaxmHKxFdv7VOQHJ'; // Liam's correct voice ID
-    const modelId = language === 'es' ? 'eleven_multilingual_v1' : 'eleven_monolingual_v1'; // Use multilingual model for Spanish
+    console.log(`Using API key: ${ELEVENLABS_API_KEY ? 'Set' : 'Not set'}`);
+    const voiceId = language === 'es' ? 'pNInz6obpgDQGcFmaJgB' : 'TX3LPaxmHKxFdv7VOQHJ'; // Use a Spanish-compatible voice for 'es'
+    const modelId = language === 'es' ? 'eleven_multilingual_v2' : 'eleven_monolingual_v1'; // Use multilingual model for Spanish
     try {
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
             method: 'POST',
@@ -390,6 +390,7 @@ async function pregenerateNarratedVideos(id) {
                 continue;
             }
 
+            let narrationPath, adjustedNarrationPath, combinedOutputPath;
             try {
                 // Step 1: Translate the voiceover text
                 console.log(`Translating voiceover text for animation ${id} to ${language}`);
@@ -398,18 +399,18 @@ async function pregenerateNarratedVideos(id) {
 
                 // Step 2: Fetch narration from ElevenLabs
                 console.log(`Fetching narration for animation ${id} in ${language}`);
-                const narrationPath = await fetchNarration(translatedText, language);
+                narrationPath = await fetchNarration(translatedText, language);
                 console.log(`Successfully fetched narration for animation ${id} in ${language}`);
 
                 // Step 3: Adjust narration duration
                 console.log(`Adjusting narration duration for animation ${id} in ${language}`);
-                const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
                 await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
                 console.log(`Successfully adjusted narration duration for animation ${id} in ${language}`);
 
                 // Step 4: Combine video and narration
                 console.log(`Combining video and narration for animation ${id} in ${language}`);
-                const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
+                combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
                 await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
                 console.log(`Successfully combined video and narration for animation ${id} in ${language}`);
 
@@ -417,15 +418,21 @@ async function pregenerateNarratedVideos(id) {
                 console.log(`Uploading video to Spaces for animation ${id} in ${language}`);
                 await uploadToSpaces(combinedOutputPath, videoKey);
                 console.log(`Successfully uploaded video to Spaces for animation ${id} in ${language}: ${videoKey}`);
-
-                // Clean up temporary files
-                await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file ${narrationPath}: ${err.message}`));
-                await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file ${adjustedNarrationPath}: ${err.message}`));
-                await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file ${combinedOutputPath}: ${err.message}`));
             } catch (err) {
                 console.error(`Failed to pre-generate video for animation ${id} in language ${language}: ${err.message}`);
                 console.error(err.stack);
-                continue; // Continue with the next language
+                throw err; // Re-throw to ensure the error is logged in the calling function
+            } finally {
+                // Clean up temporary files even if an error occurs
+                if (narrationPath) {
+                    await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file ${narrationPath}: ${err.message}`));
+                }
+                if (adjustedNarrationPath) {
+                    await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file ${adjustedNarrationPath}: ${err.message}`));
+                }
+                if (combinedOutputPath) {
+                    await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file ${combinedOutputPath}: ${err.message}`));
+                }
             }
         }
         console.log(`Completed pre-generation for animation ${id}`);
@@ -458,7 +465,6 @@ const initializeDatabase = () => {
             }
         });
 
-        // Removed default animation insertion to prevent re-insertion after deletion
         // Pre-generate narrated videos for existing animations on startup
         setTimeout(async () => {
             try {
@@ -834,9 +840,13 @@ app.get('/embed/:id', (req, res) => {
                     height: 400px;
                     border-radius: 10px;
                     visibility: hidden; /* Initially hidden to prevent layout shift */
+                    transition: visibility 0.3s ease; /* Smooth transition for visibility */
                 }
                 .video-container video.loaded {
                     visibility: visible; /* Show once loaded */
+                }
+                .video-container video:not(.loaded) {
+                    controls: false; /* Hide controls until loaded */
                 }
                 .loading-spinner {
                     position: absolute;
@@ -1000,6 +1010,7 @@ app.get('/embed/:id', (req, res) => {
 
                         const loadVideo = (lang) => {
                             video.style.visibility = 'hidden'; // Hide video to prevent layout shift
+                            video.removeAttribute('controls'); // Hide controls until loaded
                             loadingSpinner.style.display = 'block';
                             errorMessage.style.display = 'none';
 
@@ -1009,6 +1020,7 @@ app.get('/embed/:id', (req, res) => {
                                     video.src = data.videoUrl;
                                     video.style.visibility = 'visible'; // Show video once loaded
                                     video.classList.add('loaded'); // Add loaded class for styling
+                                    video.setAttribute('controls', ''); // Show controls once loaded
                                     loadingSpinner.style.display = 'none';
                                     // Force the browser to render the first frame
                                     video.addEventListener('loadedmetadata', () => {
