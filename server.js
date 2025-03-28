@@ -277,6 +277,7 @@ async function fetchNarration(text, language) {
                 voice_settings: {
                     stability: 0.5,
                     similarity_boost: 0.5,
+                    speed: language === 'es' ? 1.2 : 1.0, // Speed up Spanish narration by 20%
                 },
             }),
         });
@@ -832,16 +833,17 @@ app.get('/embed/:id', (req, res) => {
                     height: 400px;
                     margin: 0 auto;
                     border-radius: 10px;
+                    background-color: #000;
                 }
                 .video-container video {
                     width: 400px;
                     height: 400px;
                     border-radius: 10px;
-                    visibility: hidden;
-                    transition: visibility 0.3s ease;
+                    opacity: 0;
+                    transition: opacity 0.5s ease;
                 }
                 .video-container video.loaded {
-                    visibility: visible;
+                    opacity: 1;
                 }
                 .loading-spinner {
                     position: absolute;
@@ -854,6 +856,11 @@ app.get('/embed/:id', (req, res) => {
                     width: 40px;
                     height: 40px;
                     animation: spin 1s linear infinite;
+                    opacity: 1;
+                    transition: opacity 0.3s ease;
+                }
+                .loading-spinner.hidden {
+                    opacity: 0;
                 }
                 @keyframes spin {
                     0% { transform: translate(-50%, -50%) rotate(0deg); }
@@ -1011,19 +1018,18 @@ app.get('/embed/:id', (req, res) => {
                         const errorMessage = document.getElementById('errorMessage');
 
                         const loadVideo = (lang) => {
-                            video.style.visibility = 'hidden';
+                            video.style.opacity = '0';
                             video.removeAttribute('controls');
-                            loadingSpinner.style.display = 'block';
+                            loadingSpinner.classList.remove('hidden');
                             errorMessage.style.display = 'none';
 
                             fetch(\`/api/narration/\${id}/\${lang}/full\`)
                                 .then(response => response.json())
                                 .then(data => {
                                     video.src = data.videoUrl;
-                                    video.style.visibility = 'visible';
                                     video.classList.add('loaded');
                                     video.setAttribute('controls', '');
-                                    loadingSpinner.style.display = 'none';
+                                    loadingSpinner.classList.add('hidden');
                                     video.addEventListener('loadedmetadata', () => {
                                         video.currentTime = 0.1;
                                     }, { once: true });
@@ -1031,7 +1037,7 @@ app.get('/embed/:id', (req, res) => {
                                 .catch(err => {
                                     errorMessage.textContent = 'Error loading video: The narrated video for this language is not available. Please try another language or contact support.';
                                     errorMessage.style.display = 'block';
-                                    loadingSpinner.style.display = 'none';
+                                    loadingSpinner.classList.add('hidden');
                                 });
                         };
 
