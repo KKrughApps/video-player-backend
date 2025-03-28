@@ -27,13 +27,11 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
-// PostgreSQL Database Setup with enhanced SSL configuration
+// PostgreSQL Database Setup with SSL validation disabled (fallback)
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
-        rejectUnauthorized: true, // Enforce certificate validation
-        ca: process.env.DATABASE_CA, // Use the CA certificate from environment variable
-        checkServerIdentity: () => undefined, // Bypass hostname verification (optional, for testing)
+        rejectUnauthorized: false, // Temporarily disable certificate validation
     }
 });
 
