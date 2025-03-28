@@ -27,7 +27,7 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
-// PostgreSQL Database Setup
+// PostgreSQL Database Setup with SSL fix
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -775,7 +775,7 @@ app.get('/embed/:id', (req, res) => {
                 .language-item {
                     color: white;
                     padding: 5px 3px;
-                    cursor: pointer;
+ xiii                    cursor: pointer;
                     font-family: Arial, sans-serif;
                     white-space: nowrap;
                     overflow: hidden;
