@@ -1,5 +1,5 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const fetch = require('node-fetch');
 const fs = require('fs').promises;
 const path = require('path');
@@ -27,8 +27,14 @@ const s3 = new AWS.S3({
     secretAccessKey: process.env.SPACES_SECRET
 });
 
+// PostgreSQL Database Setup
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
 // Helper function to upload a file to Spaces
-async function uploadToSpaces(filePath, key, isDatabase = false) {
+async function uploadToSpaces(filePath, key) {
     try {
         const fileContent = await fs.readFile(filePath);
         console.log(`Uploading file ${filePath} to Spaces with key ${key}`);
@@ -36,50 +42,21 @@ async function uploadToSpaces(filePath, key, isDatabase = false) {
             Bucket: process.env.SPACES_BUCKET,
             Key: key,
             Body: fileContent,
-            ACL: isDatabase ? 'private' : 'public-read', // Database file should not be publicly accessible
-            ContentType: isDatabase ? 'application/x-sqlite3' : 'video/mp4'
+            ACL: 'public-read',
+            ContentType: 'video/mp4'
         }).promise();
         console.log(`Successfully uploaded to Spaces: ${uploadResult.Location}`);
-
-        // Verify the file is accessible (for public files)
-        if (!isDatabase) {
-            console.log(`Verifying public accessibility of ${uploadResult.Location}`);
-            const response = await fetch(uploadResult.Location, { method: 'HEAD' });
-            if (response.ok) {
-                console.log(`File is publicly accessible: ${uploadResult.Location}`);
-            } else {
-                console.error(`File is not publicly accessible: ${uploadResult.Location} (Status: ${response.status})`);
-                throw new Error(`File is not publicly accessible: ${uploadResult.Location}`);
-            }
+        const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+        console.log(`Verifying public accessibility of ${videoUrl}`);
+        const response = await fetch(videoUrl, { method: 'HEAD' });
+        if (!response.ok) {
+            console.error(`File is not publicly accessible: ${videoUrl} (Status: ${response.status})`);
+            throw new Error(`File is not publicly accessible: ${videoUrl}`);
         }
-
-        return uploadResult.Location;
+        return videoUrl;
     } catch (err) {
         console.error(`Error uploading to Spaces: ${err.message}`);
-        console.error(err.stack);
         throw err;
-    }
-}
-
-// Helper function to download a file from Spaces
-async function downloadFromSpaces(key, filePath) {
-    try {
-        console.log(`Downloading file from Spaces with key ${key} to ${filePath}`);
-        const params = {
-            Bucket: process.env.SPACES_BUCKET,
-            Key: key
-        };
-        const data = await s3.getObject(params).promise();
-        await fs.writeFile(filePath, data.Body);
-        console.log(`Successfully downloaded file from Spaces to ${filePath}`);
-    } catch (err) {
-        if (err.code === 'NoSuchKey') {
-            console.log(`File ${key} does not exist in Spaces, proceeding with a new database file.`);
-        } else {
-            console.error(`Error downloading from Spaces: ${err.message}`);
-            console.error(err.stack);
-            throw err;
-        }
     }
 }
 
@@ -158,70 +135,13 @@ app.use((req, res, next) => {
     next();
 });
 
-// Ensure the videos, temp, and db directories exist
+// Ensure the videos and temp directories exist
 const ensureDirectories = async () => {
     try {
         await fs.mkdir(path.join(__dirname, 'videos'), { recursive: true });
         await fs.mkdir(path.join(__dirname, 'temp'), { recursive: true });
-        await fs.mkdir(path.join(__dirname, 'db'), { recursive: true });
     } catch (err) {
         console.error('Error creating directories:', err.message);
-    }
-};
-
-// SQLite Database Setup
-const dbPath = path.join(__dirname, 'db', 'animations.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error connecting to SQLite database:', err.message);
-    } else {
-        console.log('Connected to SQLite database.');
-    }
-});
-
-// Helper function to sync the database with Spaces
-const dbKey = 'animations.db';
-async function syncDatabaseToSpaces() {
-    try {
-        console.log('Syncing database to Spaces...');
-        await uploadToSpaces(dbPath, dbKey, true);
-        console.log('Database synced to Spaces successfully.');
-    } catch (err) {
-        console.error('Error syncing database to Spaces:', err.message);
-        throw err;
-    }
-}
-
-// Initialize the database and sync with Spaces on startup
-const initializeDatabase = async () => {
-    try {
-        // Download the database from Spaces if it exists
-        await downloadFromSpaces(dbKey, dbPath);
-
-        // Create the animations table if it doesn't exist
-        db.serialize(() => {
-            db.run(`
-                CREATE TABLE IF NOT EXISTS animations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    videoPath TEXT NOT NULL,
-                    voiceoverText TEXT,
-                    setsRepsDuration TEXT,
-                    reminder TEXT,
-                    twoSided INTEGER DEFAULT 0,
-                    originalDuration REAL DEFAULT 0
-                )
-            `, (err) => {
-                if (err) {
-                    console.error('Error creating animations table:', err.message);
-                } else {
-                    console.log('Animations table created or already exists.');
-                }
-            });
-        });
-    } catch (err) {
-        console.error('Error initializing database:', err.message);
-        throw err;
     }
 };
 
@@ -263,21 +183,19 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
         const audioDuration = await getAudioDuration(inputPath);
         console.log(`Original narration duration: ${audioDuration} seconds`);
 
-        // Target duration for the spoken content (including 1-second delay, ending 2 seconds before video ends)
-        const targetSpokenDuration = videoDuration - 2; // End 2 seconds before video ends
-        const spokenDurationWithDelay = targetSpokenDuration - 1; // Subtract 1 second for the delay
-        let paddingDuration = (spokenDurationWithDelay - audioDuration); // Duration to pad in seconds
+        const targetSpokenDuration = videoDuration - 2;
+        const spokenDurationWithDelay = targetSpokenDuration - 1;
+        let paddingDuration = (spokenDurationWithDelay - audioDuration);
         console.log(`Target spoken duration (including 1-second delay): ${targetSpokenDuration} seconds`);
         console.log(`Initial padding duration for spoken content: ${paddingDuration} seconds`);
 
-        // If audio is longer than target, trim it
-        let audioFilters = ['adelay=1000|1000']; // 1-second delay at the start
+        let audioFilters = ['adelay=1000|1000'];
         if (paddingDuration < 0) {
             console.warn(`Audio duration (${audioDuration}) is longer than target (${spokenDurationWithDelay}), trimming to fit`);
-            audioFilters.push(`atrim=end=${spokenDurationWithDelay}`); // Trim to target duration
+            audioFilters.push(`atrim=end=${spokenDurationWithDelay}`);
             paddingDuration = 0;
         } else if (paddingDuration > 0) {
-            audioFilters.push(`apad=pad_dur=${paddingDuration}`); // Pad with silence
+            audioFilters.push(`apad=pad_dur=${paddingDuration}`);
         }
 
         return new Promise((resolve, reject) => {
@@ -319,7 +237,6 @@ async function translateText(text, language) {
         return translation;
     } catch (error) {
         console.error(`Error translating text to ${language}: ${error.message}`);
-        console.error(error.stack);
         throw error;
     }
 }
@@ -327,7 +244,6 @@ async function translateText(text, language) {
 // Helper function to fetch narration from ElevenLabs
 async function fetchNarration(text, language) {
     console.log(`Calling ElevenLabs API with text: ${text}, language: ${language}`);
-    console.log(`Using API key: ${ELEVENLABS_API_KEY ? 'Set' : 'Not set'}`);
     if (!ELEVENLABS_API_KEY) {
         throw new Error('ElevenLabs API key is not set in environment variables');
     }
@@ -346,7 +262,7 @@ async function fetchNarration(text, language) {
                 voice_settings: {
                     stability: 0.5,
                     similarity_boost: 0.5,
-                    speed: language === 'es' ? 1.3 : 1.0, // Increase Spanish narration speed to 1.3x
+                    speed: language === 'es' ? 1.3 : 1.0,
                 },
             }),
         });
@@ -365,7 +281,6 @@ async function fetchNarration(text, language) {
         return narrationPath;
     } catch (error) {
         console.error(`Error in fetchNarration for language ${language}: ${error.message}`);
-        console.error(error.stack);
         throw error;
     }
 }
@@ -432,6 +347,40 @@ async function flipVideo(inputPath, outputPath) {
     }
 }
 
+// Background task to generate narrated videos
+async function generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration) {
+    try {
+        const languages = ['en', 'es'];
+        for (const language of languages) {
+            console.log(`Generating video for animation ${animationId} in language ${language}`);
+            const videoKey = `temp_video_${animationId}_${language}_full.mp4`;
+            const videoExists = await fileExistsInSpaces(videoKey);
+            if (videoExists) {
+                console.log(`Video already exists for animation ${animationId} in language ${language}: ${videoKey}, skipping generation.`);
+                continue;
+            }
+
+            let narrationPath, adjustedNarrationPath, combinedOutputPath;
+            try {
+                const translatedText = await translateText(voiceoverText, language);
+                narrationPath = await fetchNarration(translatedText, language);
+                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
+                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
+                combinedOutputPath = path.join(__dirname, `combined_${animationId}_${language}.mp4`);
+                await combineVideoAndAudio(videoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
+                await uploadToSpaces(combinedOutputPath, videoKey);
+                console.log(`Successfully generated and uploaded video for animation ${animationId} in language ${language}: ${videoKey}`);
+            } finally {
+                if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
+                if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
+                if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
+            }
+        }
+    } catch (error) {
+        console.error(`Error generating narrated videos for animation ${animationId}: ${error.message}`);
+    }
+}
+
 // Middleware to check if user is authenticated
 const isAuthenticated = (req, res, next) => {
     if (req.session.authenticated) {
@@ -462,14 +411,14 @@ app.get('/admin/dashboard', isAuthenticated, (req, res) => {
 });
 
 // Admin list animations
-app.get('/admin/list', isAuthenticated, (req, res) => {
-    db.all('SELECT * FROM animations', (err, rows) => {
-        if (err) {
-            console.error('Error fetching animations:', err.message);
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ animations: rows });
-    });
+app.get('/admin/list', isAuthenticated, async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM animations');
+        res.json({ animations: result.rows });
+    } catch (err) {
+        console.error('Error fetching animations:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Admin edit animation page
@@ -487,55 +436,16 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
         const originalDuration = await getVideoDuration(videoPath);
         console.log(`Original duration for ${videoPath}: ${originalDuration} seconds`);
 
-        const insertAnimation = (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration) => {
-            return new Promise((resolve, reject) => {
-                db.run(`
-                    INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                `, [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, originalDuration], function(err) {
-                    if (err) {
-                        console.error(`Error inserting animation ${name}: ${err.message}`);
-                        reject(err);
-                    } else {
-                        console.log(`Successfully inserted animation ${name} with ID ${this.lastID}`);
-                        resolve(this.lastID);
-                    }
-                });
-            });
-        };
+        const result = await pool.query(
+            `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+            [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration]
+        );
+        const originalId = result.rows[0].id;
+        console.log(`Successfully inserted animation ${name} with ID ${originalId}`);
 
-        const originalId = await insertAnimation(name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-        console.log(`Generating narrated videos for original animation ID ${originalId}`);
-
-        // Generate narrated videos for English and Spanish
-        const languages = ['en', 'es'];
-        for (const language of languages) {
-            console.log(`Generating video for animation ${originalId} in language ${language}`);
-            const videoKey = `temp_video_${originalId}_${language}_full.mp4`;
-            const videoExists = await fileExistsInSpaces(videoKey);
-            if (videoExists) {
-                console.log(`Video already exists for animation ${originalId} in language ${language}: ${videoKey}, skipping generation.`);
-                continue;
-            }
-
-            let narrationPath, adjustedNarrationPath, combinedOutputPath;
-            try {
-                const translatedText = await translateText(voiceoverText, language);
-                narrationPath = await fetchNarration(translatedText, language);
-                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
-                combinedOutputPath = path.join(__dirname, `combined_${originalId}_${language}.mp4`);
-                await combineVideoAndAudio(videoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
-                await uploadToSpaces(combinedOutputPath, videoKey);
-                console.log(`Successfully generated and uploaded video for animation ${originalId} in language ${language}: ${videoKey}`);
-            } finally {
-                if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-                if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
-                if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
-            }
-        }
-
-        if (twoSided) {
+        // Handle two-sided animation
+        if (twoSided === 'on') {
             console.log(`Animation ${name} is two-sided, generating mirrored version`);
             const mirroredName = name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
             const mirroredVoiceoverText = voiceoverText.replace(/left/i, 'right').replace(/right/i, 'left');
@@ -543,44 +453,25 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             await flipVideo(videoPath, mirroredVideoPath);
             console.log(`Mirrored video generated at ${mirroredVideoPath}`);
 
-            const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-            console.log(`Generating narrated videos for mirrored animation ID ${mirroredId}`);
+            const mirroredResult = await pool.query(
+                `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                [mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, true, originalDuration]
+            );
+            const mirroredId = mirroredResult.rows[0].id;
+            console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
-            for (const language of languages) {
-                console.log(`Generating video for mirrored animation ${mirroredId} in language ${language}`);
-                const videoKey = `temp_video_${mirroredId}_${language}_full.mp4`;
-                const videoExists = await fileExistsInSpaces(videoKey);
-                if (videoExists) {
-                    console.log(`Video already exists for mirrored animation ${mirroredId} in language ${language}: ${videoKey}, skipping generation.`);
-                    continue;
-                }
-
-                let narrationPath, adjustedNarrationPath, combinedOutputPath;
-                try {
-                    const translatedText = await translateText(mirroredVoiceoverText, language);
-                    narrationPath = await fetchNarration(translatedText, language);
-                    adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                    await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
-                    combinedOutputPath = path.join(__dirname, `combined_${mirroredId}_${language}.mp4`);
-                    await combineVideoAndAudio(mirroredVideoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
-                    await uploadToSpaces(combinedOutputPath, videoKey);
-                    console.log(`Successfully generated and uploaded video for mirrored animation ${mirroredId} in language ${language}: ${videoKey}`);
-                } finally {
-                    if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-                    if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
-                    if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
-                }
-            }
+            // Generate narrated videos for mirrored animation in the background
+            generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
         }
 
-        // Sync the database to Spaces after adding the animation
-        await syncDatabaseToSpaces();
+        // Generate narrated videos for original animation in the background
+        generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration);
 
         console.log(`Successfully added animation ${name}`);
         res.redirect('/admin/dashboard');
     } catch (error) {
         console.error(`Error adding animation ${name}: ${error.message}`);
-        console.error(error.stack);
         res.status(500).send(`Error adding animation: ${error.message}`);
     }
 });
@@ -593,69 +484,34 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
 
     try {
         console.log(`Starting update for animation ID ${id}`);
-        const animation = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-                if (err) {
-                    console.error(`Error fetching animation ${id}: ${err.message}`);
-                    reject(err);
-                }
-                resolve(row);
-            });
-        });
+        const animationResult = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
+        const animation = animationResult.rows[0];
+        if (!animation) {
+            return res.status(404).send('Animation not found');
+        }
 
         const originalDuration = videoPath ? await getVideoDuration(videoPath) : animation.originalDuration;
 
-        const updateAnimation = (id, name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration) => {
-            return new Promise((resolve, reject) => {
-                const query = videoPath
-                    ? `UPDATE animations SET name = ?, videoPath = ?, voiceoverText = ?, setsRepsDuration = ?, reminder = ?, twoSided = ?, originalDuration = ? WHERE id = ?`
-                    : `UPDATE animations SET name = ?, voiceoverText = ?, setsRepsDuration = ?, reminder = ?, twoSided = ? WHERE id = ?`;
-                const params = videoPath
-                    ? [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, originalDuration, id]
-                    : [name, voiceoverText, setsRepsDuration, reminder, twoSided ? 1 : 0, id];
-                db.run(query, params, function(err) {
-                    if (err) {
-                        console.error(`Error updating animation ${id}: ${err.message}`);
-                        reject(err);
-                    } else {
-                        console.log(`Successfully updated animation ${id}`);
-                        resolve();
-                    }
-                });
-            });
-        };
-
-        await updateAnimation(id, name, videoPath || animation.videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-        console.log(`Generating narrated videos for updated animation ID ${id}`);
+        await pool.query(
+            videoPath
+                ? `UPDATE animations SET name = $1, videoPath = $2, voiceoverText = $3, setsRepsDuration = $4, reminder = $5, twoSided = $6, originalDuration = $7 WHERE id = $8`
+                : `UPDATE animations SET name = $1, voiceoverText = $2, setsRepsDuration = $3, reminder = $4, twoSided = $5 WHERE id = $6`,
+            videoPath
+                ? [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration, id]
+                : [name, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', id]
+        );
+        console.log(`Successfully updated animation ${id}`);
 
         const languages = ['en', 'es'];
         for (const language of languages) {
-            console.log(`Generating video for updated animation ${id} in language ${language}`);
             const videoKey = `temp_video_${id}_${language}_full.mp4`;
-            const videoExists = await fileExistsInSpaces(videoKey);
-            if (videoExists) {
+            if (await fileExistsInSpaces(videoKey)) {
                 await deleteFromSpaces(videoKey);
                 console.log(`Deleted existing video for animation ${id} in language ${language}: ${videoKey}`);
             }
-
-            let narrationPath, adjustedNarrationPath, combinedOutputPath;
-            try {
-                const translatedText = await translateText(voiceoverText, language);
-                narrationPath = await fetchNarration(translatedText, language);
-                adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
-                combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
-                await combineVideoAndAudio(videoPath || animation.videoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
-                await uploadToSpaces(combinedOutputPath, videoKey);
-                console.log(`Successfully generated and uploaded video for updated animation ${id} in language ${language}: ${videoKey}`);
-            } finally {
-                if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-                if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
-                if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
-            }
         }
 
-        if (twoSided) {
+        if (twoSided === 'on') {
             console.log(`Animation ${name} is two-sided, updating mirrored version`);
             const mirroredName = name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
             const mirroredVoiceoverText = voiceoverText.replace(/left/i, 'right').replace(/right/i, 'left');
@@ -666,85 +522,47 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 console.log(`Mirrored video updated at ${mirroredVideoPath}`);
             }
 
-            const mirroredAnimation = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM animations WHERE name = ?', [mirroredName], (err, row) => {
-                    if (err) {
-                        console.error(`Error fetching mirrored animation for ${mirroredName}: ${err.message}`);
-                        reject(err);
-                    }
-                    resolve(row);
-                });
-            });
+            const mirroredResult = await pool.query('SELECT * FROM animations WHERE name = $1', [mirroredName]);
+            const mirroredAnimation = mirroredResult.rows[0];
 
             if (mirroredAnimation) {
-                await updateAnimation(mirroredAnimation.id, mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, twoSided, originalDuration);
-                console.log(`Generating narrated videos for updated mirrored animation ID ${mirroredAnimation.id}`);
+                await pool.query(
+                    videoPath
+                        ? `UPDATE animations SET name = $1, videoPath = $2, voiceoverText = $3, setsRepsDuration = $4, reminder = $5, twoSided = $6, originalDuration = $7 WHERE id = $8`
+                        : `UPDATE animations SET name = $1, voiceoverText = $2, setsRepsDuration = $3, reminder = $4, twoSided = $5 WHERE id = $6`,
+                    videoPath
+                        ? [mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, true, originalDuration, mirroredAnimation.id]
+                        : [mirroredName, mirroredVoiceoverText, setsRepsDuration, reminder, true, mirroredAnimation.id]
+                );
+                console.log(`Successfully updated mirrored animation ${mirroredAnimation.id}`);
 
                 for (const language of languages) {
-                    console.log(`Generating video for updated mirrored animation ${mirroredAnimation.id} in language ${language}`);
                     const videoKey = `temp_video_${mirroredAnimation.id}_${language}_full.mp4`;
-                    const videoExists = await fileExistsInSpaces(videoKey);
-                    if (videoExists) {
+                    if (await fileExistsInSpaces(videoKey)) {
                         await deleteFromSpaces(videoKey);
                         console.log(`Deleted existing video for mirrored animation ${mirroredAnimation.id} in language ${language}: ${videoKey}`);
                     }
-
-                    let narrationPath, adjustedNarrationPath, combinedOutputPath;
-                    try {
-                        const translatedText = await translateText(mirroredVoiceoverText, language);
-                        narrationPath = await fetchNarration(translatedText, language);
-                        adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                        await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
-                        combinedOutputPath = path.join(__dirname, `combined_${mirroredAnimation.id}_${language}.mp4`);
-                        await combineVideoAndAudio(mirroredVideoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
-                        await uploadToSpaces(combinedOutputPath, videoKey);
-                        console.log(`Successfully generated and uploaded video for updated mirrored animation ${mirroredAnimation.id} in language ${language}: ${videoKey}`);
-                    } finally {
-                        if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-                        if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
-                        if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
-                    }
                 }
+
+                generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
             } else {
-                const mirroredId = await insertAnimation(mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, 1, originalDuration);
-                console.log(`Generating narrated videos for new mirrored animation ID ${mirroredId}`);
-
-                for (const language of languages) {
-                    console.log(`Generating video for new mirrored animation ${mirroredId} in language ${language}`);
-                    const videoKey = `temp_video_${mirroredId}_${language}_full.mp4`;
-                    const videoExists = await fileExistsInSpaces(videoKey);
-                    if (videoExists) {
-                        console.log(`Video already exists for new mirrored animation ${mirroredId} in language ${language}: ${videoKey}, skipping generation.`);
-                        continue;
-                    }
-
-                    let narrationPath, adjustedNarrationPath, combinedOutputPath;
-                    try {
-                        const translatedText = await translateText(mirroredVoiceoverText, language);
-                        narrationPath = await fetchNarration(translatedText, language);
-                        adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-                        await adjustNarrationDuration(narrationPath, adjustedNarrationPath, originalDuration);
-                        combinedOutputPath = path.join(__dirname, `combined_${mirroredId}_${language}.mp4`);
-                        await combineVideoAndAudio(mirroredVideoPath, adjustedNarrationPath, combinedOutputPath, originalDuration);
-                        await uploadToSpaces(combinedOutputPath, videoKey);
-                        console.log(`Successfully generated and uploaded video for new mirrored animation ${mirroredId} in language ${language}: ${videoKey}`);
-                    } finally {
-                        if (narrationPath) await fs.unlink(narrationPath).catch(err => console.error(`Error deleting narration file: ${err.message}`));
-                        if (adjustedNarrationPath) await fs.unlink(adjustedNarrationPath).catch(err => console.error(`Error deleting adjusted narration file: ${err.message}`));
-                        if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
-                    }
-                }
+                const mirroredResult = await pool.query(
+                    `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                    [mirroredName, mirroredVideoPath, mirroredVoiceoverText, setsRepsDuration, reminder, true, originalDuration]
+                );
+                const mirroredId = mirroredResult.rows[0].id;
+                console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
+                generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
             }
         }
 
-        // Sync the database to Spaces after updating the animation
-        await syncDatabaseToSpaces();
+        generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration);
 
         console.log(`Successfully updated animation ${id}`);
         res.redirect('/admin/dashboard');
     } catch (error) {
         console.error(`Error updating animation ${id}: ${error.message}`);
-        console.error(error.stack);
         res.status(500).send(`Error updating animation: ${error.message}`);
     }
 });
@@ -754,23 +572,13 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
     const { id } = req.params;
 
     try {
-        const animation = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-
+        const animationResult = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
+        const animation = animationResult.rows[0];
         if (!animation) {
             return res.status(404).json({ error: 'Animation not found' });
         }
 
-        await new Promise((resolve, reject) => {
-            db.run('DELETE FROM animations WHERE id = ?', [id], function(err) {
-                if (err) reject(err);
-                resolve();
-            });
-        });
+        await pool.query('DELETE FROM animations WHERE id = $1', [id]);
 
         if (animation.videoPath && animation.videoPath !== 'videos/default.mp4') {
             await fs.unlink(animation.videoPath).catch(err => console.error(`Error deleting video file: ${err.message}`));
@@ -786,20 +594,11 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
 
         if (animation.twoSided) {
             const mirroredName = animation.name.replace(/Left/i, 'Right').replace(/Right/i, 'Left');
-            const mirroredAnimation = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM animations WHERE name = ?', [mirroredName], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
-            });
+            const mirroredResult = await pool.query('SELECT * FROM animations WHERE name = $1', [mirroredName]);
+            const mirroredAnimation = mirroredResult.rows[0];
 
             if (mirroredAnimation) {
-                await new Promise((resolve, reject) => {
-                    db.run('DELETE FROM animations WHERE id = ?', [mirroredAnimation.id], function(err) {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
+                await pool.query('DELETE FROM animations WHERE id = $1', [mirroredAnimation.id]);
 
                 if (mirroredAnimation.videoPath && mirroredAnimation.videoPath !== 'videos/default.mp4') {
                     await fs.unlink(mirroredAnimation.videoPath).catch(err => console.error(`Error deleting mirrored video file: ${err.message}`));
@@ -813,9 +612,6 @@ app.delete('/admin/delete/:id', isAuthenticated, async (req, res) => {
                 }
             }
         }
-
-        // Sync the database to Spaces after deleting the animation
-        await syncDatabaseToSpaces();
 
         res.status(200).json({ message: 'Animation deleted successfully' });
     } catch (error) {
@@ -1063,7 +859,6 @@ app.get('/embed/:id', (req, res) => {
                         const loadingSpinner = document.getElementById('loadingSpinner');
                         const errorMessage = document.getElementById('errorMessage');
 
-                        // Add error handler for video element
                         video.addEventListener('error', (e) => {
                             console.error('Video playback error:', e);
                             errorMessage.textContent = 'Error playing video: The video failed to load or play. Please try another language or contact support.';
@@ -1072,8 +867,8 @@ app.get('/embed/:id', (req, res) => {
                         });
 
                         const loadVideo = (lang) => {
-                            video.pause(); // Pause any ongoing playback
-                            video.src = ''; // Clear the current source to cancel any ongoing requests
+                            video.pause();
+                            video.src = '';
                             video.style.opacity = '0';
                             video.removeAttribute('controls');
                             loadingSpinner.classList.remove('hidden');
@@ -1135,18 +930,9 @@ app.get('/embed/:id', (req, res) => {
 // Landing page route for TKA recovery exercises
 app.get('/tka-recovery', async (req, res) => {
     try {
-        const animations = await new Promise((resolve, reject) => {
-            db.all('SELECT * FROM animations LIMIT 3', (err, rows) => {
-                if (err) {
-                    console.error('Error fetching animations for /tka-recovery:', err.message);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
-            });
-        });
+        const result = await pool.query('SELECT * FROM animations LIMIT 3');
+        const animations = result.rows;
 
-        // Default to a placeholder if no animations are found
         const animation1 = animations[0] || { id: 0 };
         const animation2 = animations[1] || { id: 0 };
         const animation3 = animations[2] || { id: 0 };
@@ -1328,18 +1114,18 @@ app.get('/test', (req, res) => {
 app.get('/api/animation/:id', async (req, res) => {
     const { id } = req.params;
     console.log(`Received request for /api/animation/${id}`);
-    db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-        if (err) {
-            console.error('Error fetching animation:', err.message);
-            return res.status(500).json({ error: err.message });
-        }
-        if (!row) {
+    try {
+        const result = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
+        if (result.rows.length === 0) {
             console.log(`Animation with ID ${id} not found`);
             return res.status(404).json({ error: 'Animation not found' });
         }
-        console.log(`Found animation with ID ${id}:`, row);
-        res.json(row);
-    });
+        console.log(`Found animation with ID ${id}:`, result.rows[0]);
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Error fetching animation:', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // API to serve narrated videos from Spaces
@@ -1357,31 +1143,7 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
         const videoExists = await fileExistsInSpaces(videoKey);
 
         if (!videoExists) {
-            console.log(`Pre-generated video not found for ${id}/${language}, generating now...`);
-            const animation = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM animations WHERE id = ?', [id], (err, row) => {
-                    if (err) {
-                        console.error(`Database error: ${err.message}`);
-                        reject(err);
-                    }
-                    if (!row) {
-                        console.error('Animation not found');
-                        reject(new Error('Animation not found'));
-                    }
-                    resolve(row);
-                });
-            });
-
-            const translatedText = await translateText(animation.voiceoverText, language);
-            const narrationPath = await fetchNarration(translatedText, language);
-            const originalVideoPath = path.join(__dirname, animation.videoPath);
-            const adjustedNarrationPath = path.join(__dirname, `narration_adjusted_${language}.mp3`);
-            const combinedOutputPath = path.join(__dirname, `combined_${id}_${language}.mp4`);
-            const videoDuration = animation.originalDuration || 38;
-            await adjustNarrationDuration(narrationPath, adjustedNarrationPath, videoDuration);
-            await combineVideoAndAudio(originalVideoPath, adjustedNarrationPath, combinedOutputPath, videoDuration);
-            await uploadToSpaces(combinedOutputPath, videoKey);
-            console.log(`Generated video: ${videoKey}`);
+            return res.status(404).json({ error: 'Video not yet generated. Please try again later.' });
         }
 
         const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${videoKey}`;
@@ -1397,5 +1159,4 @@ app.get('/api/narration/:id/:language/full', async (req, res) => {
 const server = app.listen(port, host, async () => {
     console.log(`Server running on port ${port}`);
     await ensureDirectories();
-    await initializeDatabase();
 });
