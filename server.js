@@ -382,6 +382,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
         }
     } catch (error) {
         console.error(`Error generating narrated videos for animation ${animationId}: ${error.message}`);
+        throw error; // Re-throw the error to ensure it's caught by the caller
     }
 }
 
@@ -465,12 +466,12 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             const mirroredId = mirroredResult.rows[0].id;
             console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
-            // Generate narrated videos for mirrored animation in the background
-            generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+            // Generate narrated videos for mirrored animation and wait for completion
+            await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
         }
 
-        // Generate narrated videos for original animation in the background
-        generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration);
+        // Generate narrated videos for original animation and wait for completion
+        await generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration);
 
         console.log(`Successfully added animation ${name}`);
         res.redirect('/admin/dashboard');
@@ -548,7 +549,7 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                     }
                 }
 
-                generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                await generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
             } else {
                 const mirroredResult = await pool.query(
                     `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
@@ -557,11 +558,11 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 );
                 const mirroredId = mirroredResult.rows[0].id;
                 console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
-                generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
             }
         }
 
-        generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration);
+        await generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration);
 
         console.log(`Successfully updated animation ${id}`);
         res.redirect('/admin/dashboard');
