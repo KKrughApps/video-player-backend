@@ -37,6 +37,15 @@ dbConfig.ssl = {
 // PostgreSQL Database Setup with parsed configuration
 const pool = new Pool(dbConfig);
 
+// Log environment variables at startup
+console.log('Environment Variables at Startup:');
+console.log(`ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY ? 'Set' : 'Not Set'}`);
+console.log(`GOOGLE_API_KEY: ${GOOGLE_API_KEY ? 'Set' : 'Not Set'}`);
+console.log(`SPACES_KEY: ${process.env.SPACES_KEY ? 'Set' : 'Not Set'}`);
+console.log(`SPACES_SECRET: ${process.env.SPACES_SECRET ? 'Set' : 'Not Set'}`);
+console.log(`SPACES_BUCKET: ${process.env.SPACES_BUCKET ? 'Set' : 'Not Set'}`);
+console.log(`SPACES_ENDPOINT: ${process.env.SPACES_ENDPOINT ? 'Set' : 'Not Set'}`);
+
 // Helper function to upload a file to Spaces
 async function uploadToSpaces(filePath, key) {
     try {
@@ -355,6 +364,7 @@ async function flipVideo(inputPath, outputPath) {
 async function generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration) {
     try {
         console.log(`Starting generateNarratedVideos for animation ${animationId}`);
+        console.log(`Parameters: videoPath=${videoPath}, voiceoverText=${voiceoverText}, originalDuration=${originalDuration}`);
 
         // Check environment variables
         if (!ELEVENLABS_API_KEY) throw new Error('ELEVENLABS_API_KEY is not set');
@@ -397,6 +407,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
                 if (combinedOutputPath) await fs.unlink(combinedOutputPath).catch(err => console.error(`Error deleting combined file: ${err.message}`));
             }
         }
+        console.log(`Completed generateNarratedVideos for animation ${animationId}`);
     } catch (error) {
         console.error(`Error generating narrated videos for animation ${animationId}: ${error.message}`);
         throw error;
@@ -484,16 +495,20 @@ app.post('/admin/add', isAuthenticated, upload.single('video'), async (req, res)
             console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
             // Generate narrated videos for mirrored animation synchronously for debugging
+            console.log(`Starting video generation for mirrored animation ${mirroredId}`);
             try {
                 await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                console.log(`Completed video generation for mirrored animation ${mirroredId}`);
             } catch (err) {
                 console.error(`Failed to generate narrated videos for mirrored animation ${mirroredId}: ${err.message}`);
             }
         }
 
         // Generate narrated videos for original animation synchronously for debugging
+        console.log(`Starting video generation for original animation ${originalId}`);
         try {
             await generateNarratedVideos(originalId, videoPath, voiceoverText, originalDuration);
+            console.log(`Completed video generation for original animation ${originalId}`);
         } catch (err) {
             console.error(`Failed to generate narrated videos for animation ${originalId}: ${err.message}`);
         }
@@ -585,8 +600,10 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 });
 
                 // Generate narrated videos for mirrored animation synchronously for debugging
+                console.log(`Starting video generation for mirrored animation ${mirroredAnimation.id}`);
                 try {
                     await generateNarratedVideos(mirroredAnimation.id, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                    console.log(`Completed video generation for mirrored animation ${mirroredAnimation.id}`);
                 } catch (err) {
                     console.error(`Failed to generate narrated videos for mirrored animation ${mirroredAnimation.id}: ${err.message}`);
                 }
@@ -600,8 +617,10 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
                 console.log(`Successfully inserted mirrored animation ${mirroredName} with ID ${mirroredId}`);
 
                 // Generate narrated videos for mirrored animation synchronously for debugging
+                console.log(`Starting video generation for mirrored animation ${mirroredId}`);
                 try {
                     await generateNarratedVideos(mirroredId, mirroredVideoPath, mirroredVoiceoverText, originalDuration);
+                    console.log(`Completed video generation for mirrored animation ${mirroredId}`);
                 } catch (err) {
                     console.error(`Failed to generate narrated videos for mirrored animation ${mirroredId}: ${err.message}`);
                 }
@@ -609,8 +628,10 @@ app.post('/admin/update/:id', isAuthenticated, upload.single('video'), async (re
         }
 
         // Generate narrated videos for original animation synchronously for debugging
+        console.log(`Starting video generation for original animation ${id}`);
         try {
             await generateNarratedVideos(id, videoPath || animation.videoPath, voiceoverText, originalDuration);
+            console.log(`Completed video generation for original animation ${id}`);
         } catch (err) {
             console.error(`Failed to generate narrated videos for animation ${id}: ${err.message}`);
         }
