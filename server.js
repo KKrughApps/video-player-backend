@@ -27,4 +27,6 @@ videoQueue.isReady().then(() => {
     console.error('Redis connection failed:', err);
 });
 
+require('./src/services/worker');
+
 app.listen(port, host, () => console.log(`Server running on port ${port}`));
