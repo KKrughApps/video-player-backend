@@ -46,36 +46,42 @@ module.exports = (pool) => {
                 
                 console.log(`Original video path: ${originalVideo}`);
                 
-                if (originalVideo) {
-                    // If the video is stored locally, serve it directly
-                    if (originalVideo.startsWith('videos/')) {
-                        videoUrl = `/${originalVideo}`;
-                    } else if (originalVideo.startsWith('/videos/')) {
-                        videoUrl = originalVideo;
-                    } else {
-                        videoUrl = originalVideo;
-                    }
-                    console.log(`Serving original video: ${videoUrl}`);
-                    
-                    // For debugging - check if file actually exists
-                    const fs = require('fs');
-                    const path = require('path');
-                    if (originalVideo.startsWith('videos/') || originalVideo.startsWith('/videos/')) {
-                        const localPath = path.join(__dirname, '../../', originalVideo.startsWith('/') ? originalVideo.substring(1) : originalVideo);
-                        try {
-                            const exists = fs.existsSync(localPath);
-                            console.log(`Checking if local file exists at ${localPath}: ${exists}`);
-                        } catch (fsError) {
-                            console.error(`Error checking local file: ${fsError.message}`);
-                        }
-                    }
-                } else {
+                if (!originalVideo) {
                     // No video available
                     console.log('No video path found in database');
                     return res.status(404).json({ 
-                        error: 'Video not found. Either no video has been uploaded or it is still processing.',
+                        error: 'Video not found. The video may still be processing.',
                         status: 'PROCESSING'
                     });
+                }
+                
+                // If the video is stored locally, serve it directly
+                if (originalVideo.startsWith('videos/')) {
+                    videoUrl = `/${originalVideo}`;
+                } else if (originalVideo.startsWith('/videos/')) {
+                    videoUrl = originalVideo;
+                } else {
+                    videoUrl = originalVideo;
+                }
+                console.log(`Serving original video: ${videoUrl}`);
+                
+                // For debugging - check if file actually exists
+                const fs = require('fs');
+                const path = require('path');
+                if (originalVideo.startsWith('videos/') || originalVideo.startsWith('/videos/')) {
+                    const localPath = path.join(__dirname, '../../', originalVideo.startsWith('/') ? originalVideo.substring(1) : originalVideo);
+                    try {
+                        const exists = fs.existsSync(localPath);
+                        console.log(`Checking if local file exists at ${localPath}: ${exists}`);
+                        if (!exists) {
+                            return res.status(404).json({ 
+                                error: 'Video file not found on server. It may have been moved or deleted.',
+                                status: 'MISSING'
+                            });
+                        }
+                    } catch (fsError) {
+                        console.error(`Error checking local file: ${fsError.message}`);
+                    }
                 }
             }
             

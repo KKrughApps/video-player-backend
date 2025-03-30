@@ -82,23 +82,21 @@ module.exports = (pool) => {
         console.log('Files submitted:', req.files || 'No files array');
         console.log('Single file:', req.file || 'No single file');
         
-        // Make video optional - generate animation entry without video if needed
-        let videoPath = null;
-        let originalDuration = 30.0; // Default duration if no video
+        // Require video file
+        if (!req.file) {
+            return res.status(400).send('Error: Video file is required');
+        }
         
-        if (req.file) {
-            videoPath = req.file.path;
-            console.log('Video path:', videoPath);
-            
-            try {
-                originalDuration = await getVideoDuration(videoPath);
-                console.log('Video duration:', originalDuration);
-            } catch (durationError) {
-                console.error('Error getting video duration:', durationError);
-                // Continue with default duration
-            }
-        } else {
-            console.log('No video file uploaded, creating animation without video');
+        const videoPath = req.file.path;
+        console.log('Video path:', videoPath);
+        
+        let originalDuration = 30.0; // Default duration
+        try {
+            originalDuration = await getVideoDuration(videoPath);
+            console.log('Video duration:', originalDuration);
+        } catch (durationError) {
+            console.error('Error getting video duration:', durationError);
+            // Continue with default duration
         }
         
         try {

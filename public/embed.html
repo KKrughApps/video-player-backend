@@ -406,8 +406,14 @@
                     const responseData = await response.json().catch(() => ({}));
                     
                     // Handle specific cases
-                    if (response.status === 404 && responseData.status === 'PROCESSING') {
-                        showStatus('This animation is still processing or has no video uploaded. Please check back later.', 'info');
+                    if (response.status === 404) {
+                        if (responseData.status === 'PROCESSING') {
+                            showStatus('This animation is still processing. Please check back later.', 'info');
+                        } else if (responseData.status === 'MISSING') {
+                            showStatus('Video file not found on server. It may have been moved or deleted.', 'error');
+                        } else {
+                            showStatus('Video not available. Please contact support if this persists.', 'error');
+                        }
                         return; // Exit early, don't try to load video
                     }
                     

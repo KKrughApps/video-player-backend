@@ -9,9 +9,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
     
     // Check if video exists
     if (!videoPath) {
-        console.log(`No video path provided for animation ${animationId}, generating audio only`);
-        // Handle case where there's no video - just create the audio narration
-        await generateNarrationOnly(animationId, voiceoverText, originalDuration);
+        console.error(`No video path provided for animation ${animationId}, cannot proceed`);
         return;
     }
     
@@ -21,8 +19,6 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
             await fs.access(videoPath);
         } catch (fileError) {
             console.error(`Video file ${videoPath} does not exist or is not accessible`);
-            // Generate audio only if video file isn't available
-            await generateNarrationOnly(animationId, voiceoverText, originalDuration);
             return;
         }
     } catch (error) {
@@ -156,71 +152,4 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
     }
 }
 
-// Function to generate narration audio only (no video)
-async function generateNarrationOnly(animationId, voiceoverText, originalDuration) {
-    console.log(`Generating narration only for animation ${animationId}`);
-    const languages = ['en', 'es'];
-
-    for (const language of languages) {
-        try {
-            // Translate text if needed
-            let translatedText = voiceoverText;
-            if (language !== 'en') {
-                try {
-                    const translationResponse = await axios.post(
-                        `https://translation.googleapis.com/language/translate/v2?key=${process.env.GOOGLE_API_KEY}`,
-                        {
-                            q: voiceoverText,
-                            target: language,
-                        }
-                    );
-                    translatedText = translationResponse.data.data.translations[0].translatedText;
-                    console.log(`Translated text for ${language}: ${translatedText}`);
-                } catch (translationError) {
-                    console.error(`Translation error: ${translationError.message}`);
-                    // Continue with original text if translation fails
-                }
-            }
-
-            // Generate audio files
-            const narrationFile = `narration_${animationId}_${language}.mp3`;
-            
-            try {
-                console.log(`Calling ElevenLabs API with text: ${translatedText}, language: ${language}`);
-                const narrationResponse = await axios({
-                    method: 'post',
-                    url: 'https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM',
-                    headers: {
-                        'xi-api-key': process.env.ELEVENLABS_API_KEY,
-                        'Content-Type': 'application/json',
-                    },
-                    data: {
-                        text: translatedText,
-                        voice_settings: {
-                            stability: 0.75,
-                            similarity_boost: 0.75,
-                        },
-                    },
-                    responseType: 'arraybuffer',
-                });
-    
-                await fs.writeFile(narrationFile, narrationResponse.data);
-                console.log(`Generated narration file: ${narrationFile}`);
-                
-                // Upload the narration directly to Spaces
-                const spacesPath = `audios/narration_${animationId}_${language}.mp3`;
-                await uploadToSpaces(narrationFile, spacesPath);
-                console.log(`Uploaded narration to ${spacesPath}`);
-                
-                // Clean up local file
-                await fs.unlink(narrationFile).catch(err => console.warn(`Error deleting ${narrationFile}: ${err.message}`));
-            } catch (audioError) {
-                console.error(`Error generating or uploading audio: ${audioError.message}`);
-            }
-        } catch (err) {
-            console.error(`Error generating narration for animation ${animationId} in language ${language}: ${err.message}`);
-        }
-    }
-}
-
-module.exports = { generateNarratedVideos, generateNarrationOnly };
+module.exports = { generateNarratedVideos };
