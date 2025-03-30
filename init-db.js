@@ -10,7 +10,7 @@ const createTableSQL = `
 CREATE TABLE IF NOT EXISTS animations (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
-    videoPath TEXT,
+    videoPath TEXT NULL,
     voiceoverText TEXT,
     setsRepsDuration TEXT,
     reminder TEXT,

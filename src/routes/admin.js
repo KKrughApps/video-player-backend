@@ -9,9 +9,34 @@ const videoQueue = require('../services/jobQueue'); // Import the Bull queue
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'videos/'),
-    filename: (req, file, cb) => cb(null, `video_${Date.now()}-${Math.random()}.mp4`),
+    filename: (req, file, cb) => {
+        const extension = file.mimetype === 'video/mp4' ? '.mp4' : 
+                          file.mimetype === 'video/quicktime' ? '.mov' : 
+                          file.mimetype === 'video/x-msvideo' ? '.avi' : '.mp4';
+        
+        cb(null, `video_${Date.now()}-${Math.round(Math.random() * 1000000)}${extension}`);
+    }
 });
-const upload = multer({ storage });
+
+// Filter function to validate video files
+const fileFilter = (req, file, cb) => {
+    // Accept mp4, mov and avi
+    if (file.mimetype === 'video/mp4' || 
+        file.mimetype === 'video/quicktime' || 
+        file.mimetype === 'video/x-msvideo') {
+        cb(null, true);
+    } else {
+        cb(new Error('Unsupported file format. Only MP4, MOV, and AVI files are allowed.'), false);
+    }
+};
+
+const upload = multer({ 
+    storage,
+    fileFilter,
+    limits: {
+        fileSize: 100 * 1024 * 1024 // 100MB limit
+    }
+});
 
 const isAuthenticated = (req, res, next) => {
     if (req.session.authenticated) return next();
@@ -41,12 +66,24 @@ module.exports = (pool) => {
     router.get('/edit/:id', isAuthenticated, (req, res) => res.sendFile(path.join(__dirname, '../../public', 'edit.html')));
     router.post('/add', isAuthenticated, upload.single('video'), async (req, res) => {
         const { name, voiceoverText, setsRepsDuration, reminder, twoSided } = req.body;
+        console.log('File upload request received:', { 
+            body: req.body,
+            file: req.file,
+            hasFile: !!req.file 
+        });
+        
         if (!req.file) {
+            console.error('No file found in request');
             return res.status(400).send('Error: Video file is required');
         }
+        
         const videoPath = req.file.path;
+        console.log('Video path:', videoPath);
+        
         try {
             const originalDuration = await getVideoDuration(videoPath);
+            console.log('Video duration:', originalDuration);
+            
             const result = await pool.query(
                 `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
                  VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
