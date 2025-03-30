@@ -10,9 +10,42 @@ module.exports = (pool) => {
             const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
             if (animation.rows.length === 0) return res.status(404).json({ error: 'Animation not found' });
 
-            const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/videos/temp_video_${id}_${lang}_full.mp4`;
+            // If we're in development or the video hasn't been processed yet, serve the original video
+            const { fileExistsInSpaces } = require('../utils/spaces');
+            const spacesKey = `videos/temp_video_${id}_${lang}_full.mp4`;
+            
+            // First check if the processed video exists in Spaces
+            const processedVideoExists = await fileExistsInSpaces(spacesKey).catch(err => {
+                console.error(`Error checking if processed video exists: ${err.message}`);
+                return false;
+            });
+            
+            let videoUrl;
+            
+            if (processedVideoExists) {
+                // Use the processed video from Spaces
+                videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${spacesKey}`;
+                console.log(`Serving processed video from Spaces: ${videoUrl}`);
+            } else {
+                // Fallback to the original uploaded video
+                const originalVideo = animation.rows[0].videopath;
+                if (originalVideo) {
+                    // If the video is stored locally, serve it directly
+                    if (originalVideo.startsWith('videos/')) {
+                        videoUrl = `/${originalVideo}`;
+                    } else {
+                        videoUrl = originalVideo;
+                    }
+                    console.log(`Serving original video: ${videoUrl}`);
+                } else {
+                    // No video available
+                    return res.status(404).json({ error: 'Video not found. It may still be processing.' });
+                }
+            }
+            
             res.json({ url: videoUrl });
         } catch (err) {
+            console.error(`Error in /video/:id endpoint: ${err.message}`);
             res.status(500).json({ error: err.message });
         }
     });

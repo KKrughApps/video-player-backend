@@ -15,14 +15,56 @@
         const urlParams = new URLSearchParams(window.location.search);
         const id = window.location.pathname.split('/').pop();
         const lang = urlParams.get('lang') || 'en';
+        
+        // Add a status display
+        const statusDiv = document.createElement('div');
+        statusDiv.style.margin = '10px 0';
+        statusDiv.style.padding = '10px';
+        statusDiv.style.backgroundColor = '#f8f9fa';
+        statusDiv.style.border = '1px solid #ddd';
+        document.body.insertBefore(statusDiv, document.getElementById('animationVideo').nextSibling);
+        
+        statusDiv.textContent = 'Loading video...';
+        
         fetch(`/api/video/${id}?lang=${lang}`)
-            .then(response => response.json())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}: ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log('Video URL:', data.url);
+                statusDiv.textContent = `Attempting to load: ${data.url}`;
+                
                 const videoSource = document.getElementById('videoSource');
                 videoSource.src = data.url;
-                document.getElementById('animationVideo').load();
+                
+                const video = document.getElementById('animationVideo');
+                
+                // Add event listeners for video loading
+                video.addEventListener('loadeddata', () => {
+                    statusDiv.textContent = 'Video loaded successfully!';
+                    statusDiv.style.backgroundColor = '#d4edda';
+                    statusDiv.style.border = '1px solid #c3e6cb';
+                });
+                
+                video.addEventListener('error', (e) => {
+                    console.error('Video error:', e);
+                    statusDiv.textContent = `Error loading video. The video file might not exist or might be in an unsupported format.`;
+                    statusDiv.style.backgroundColor = '#f8d7da';
+                    statusDiv.style.border = '1px solid #f5c6cb';
+                });
+                
+                // Now load the video
+                video.load();
             })
-            .catch(err => console.error('Error loading video:', err));
+            .catch(err => {
+                console.error('Error loading video:', err);
+                statusDiv.textContent = `Error: ${err.message}`;
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.border = '1px solid #f5c6cb';
+            });
     </script>
 </body>
 </html>
