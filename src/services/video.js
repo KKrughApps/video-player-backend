@@ -67,17 +67,42 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
                     .run();
             });
 
-            await new Promise((resolve, reject) => {
-                ffmpeg(videoPath)
-                    .input(adjustedNarrationFile)
-                    .complexFilter([
-                        '[0:a][1:a]amix=inputs=2:duration=longest',
-                    ])
-                    .output(outputVideoFile)
-                    .on('end', resolve)
-                    .on('error', reject)
-                    .run();
+            // Check if the input video has an audio stream
+            const videoMetadata = await new Promise((resolve, reject) => {
+                ffmpeg.ffprobe(videoPath, (err, metadata) => {
+                    if (err) return reject(err);
+                    resolve(metadata);
+                });
             });
+
+            const hasAudioStream = videoMetadata.streams.some(stream => stream.codec_type === 'audio');
+
+            if (hasAudioStream) {
+                // If the video has audio, mix it with the narration
+                await new Promise((resolve, reject) => {
+                    ffmpeg(videoPath)
+                        .input(adjustedNarrationFile)
+                        .complexFilter([
+                            '[0:a][1:a]amix=inputs=2:duration=longest',
+                        ])
+                        .output(outputVideoFile)
+                        .on('end', resolve)
+                        .on('error', reject)
+                        .run();
+                });
+            } else {
+                // If the video has no audio, just add the narration as the audio stream
+                await new Promise((resolve, reject) => {
+                    ffmpeg(videoPath)
+                        .input(adjustedNarrationFile)
+                        .outputOptions('-c:v copy') // Copy video stream without re-encoding
+                        .outputOptions('-c:a aac')  // Encode audio as AAC
+                        .output(outputVideoFile)
+                        .on('end', resolve)
+                        .on('error', reject)
+                        .run();
+                });
+            }
 
             const spacesPath = `videos/${outputVideoFile}`;
             await storage.bucket(bucketName).upload(outputVideoFile, {
