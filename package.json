@@ -12,6 +12,7 @@
   "dependencies": {
     "@google-cloud/translate": "^8.0.0",
     "aws-sdk": "^2.1410.0",
+    "axios": "^1.8.4",
     "bull": "^4.16.5",
     "cors": "^2.8.5",
     "express": "^4.18.2",
