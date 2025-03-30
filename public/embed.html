@@ -1,168 +1,588 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Embedded Animation</title>
-    <!-- Video.js CSS -->
-    <link href="https://vjs.zencdn.net/8.8.0/video-js.css" rel="stylesheet" />
+    <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+    <meta property="og:title" content="Patient Education Video">
+    <meta property="og:description" content="Watch our education video in multiple languages!">
+    <meta property="og:image" content="">
+    <meta property="og:type" content="video.other">
     <style>
         body {
-            font-family: Arial, sans-serif;
             margin: 0;
-            padding: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background-color: #f8f9fa;
-            color: #333;
+            font-family: Arial, sans-serif;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
         }
         .video-container {
+            position: relative;
             width: 100%;
-            max-width: 640px;
-            margin: 20px auto;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            border-radius: 8px;
-            overflow: hidden;
+            max-width: 400px;
+            margin: 0 auto;
+            aspect-ratio: 1 / 1;
         }
         .video-js {
             width: 100%;
-            height: 360px;
+            height: 100%;
+            border-radius: 20px;
+            background-color: transparent;
+            outline: none !important;
+            -webkit-tap-highlight-color: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+        .video-js.vjs-default-skin, .video-js.vjs-default-skin video {
+            border: none !important;
+            box-shadow: none !important;
+        }
+        .video-js *:focus {
+            outline: none !important;
+        }
+        .vjs-control-bar {
+            background-color: #484848 !important;
+            opacity: 0.8 !important;
+            border-bottom-left-radius: 10px !important;
+            border-bottom-right-radius: 10px !important;
+            height: 40px !important;
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            position: absolute !important;
+            bottom: 0 !important;
+            top: auto !important;
+        }
+        .vjs-control-bar .vjs-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .vjs-play-control, .vjs-volume-panel, .vjs-fullscreen-control {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100% !important;
+        }
+        .vjs-control-bar .vjs-icon-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100% !important;
+            font-size: 14px !important;
+            margin-top: -4px !important;
+            vertical-align: middle !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         .vjs-big-play-button {
-            top: 50% !important;
+            background-color: #162C2A !important;
+            opacity: 0.9 !important;
+            border-radius: 50% !important;
+            width: 90px !important;
+            height: 90px !important;
+            border: none !important;
+            line-height: 90px !important;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3) !important;
+            position: absolute !important;
             left: 50% !important;
+            top: 50% !important;
+            transform: translate(-50%, -50%) !important;
+            margin: 0 !important;
+            -webkit-tap-highlight-color: transparent !important;
+            z-index: 2 !important; /* Ensure the button is above the spinner */
+        }
+        .vjs-big-play-button:focus {
+            outline: none !important;
+            background-color: #1A3C39 !important;
+        }
+        .vjs-big-play-button .vjs-icon-placeholder:before {
+            color: #FFFFFF !important;
+            font-size: 40px !important;
+            transform: scale(1.2);
+            -webkit-text-stroke: 1px #FFFFFF;
+        }
+        .vjs-loading .vjs-big-play-button {
+            display: block !important; /* Ensure the button is visible even when loading */
+        }
+        .vjs-loading::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
             transform: translate(-50%, -50%);
+            width: 40px;
+            height: 40px;
+            border: 4px solid #FFFFFF;
+            border-top: 4px solid #162C2A;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            z-index: 1 !important; /* Ensure the spinner is below the big play button */
         }
-        .language-control {
-            margin: 10px auto;
-            max-width: 640px;
-            position: relative;
+        .vjs-loading::after {
+            opacity: 1;
         }
-        .language-select {
-            display: block;
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            background-color: white;
-            font-size: 16px;
+        .vjs-loading:not(.vjs-loading)::after {
+            opacity: 0;
+        }
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+        .language-dropdown {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+        }
+        .language-button {
+            background-color: #D3D3D3;
+            color: white;
+            border: none;
+            padding: 8px 15px;
             cursor: pointer;
+            font-size: 16px;
+            font-family: Arial, sans-serif;
+            border-radius: 5px;
         }
-        .status-container {
-            width: 100%;
-            max-width: 640px;
-            margin: 10px auto;
-            padding: 10px;
-            border-radius: 4px;
+        .language-button:hover {
+            background-color: #B0B0B0;
+        }
+        .language-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background-color: #D3D3D3;
+            border: none;
+            border-radius: 5px;
+            z-index: 1000;
+            list-style: none;
+            margin: 0;
+            padding: 5px 0;
+            padding-right: 5px;
+            width: 180px;
             box-sizing: border-box;
+        }
+        .language-menu.visible {
+            display: block;
+        }
+        .language-item {
+            color: white;
+            padding: 5px 3px;
+            cursor: pointer;
+            font-family: Arial, sans-serif;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .language-item:first-child {
+            border-top-left-radius: 5px;
+            border-top-right-radius: 5px;
+        }
+        .language-item:last-child {
+            border-bottom-left-radius: 5px;
+            border-bottom-right-radius: 5px;
+        }
+        .language-item:hover {
+            background-color: #B0B0B0;
+        }
+        .vjs-selected {
+            background-color: #B0B0B0;
+        }
+        .exercise-details {
+            padding: 20px;
+            background-color: #f0f8ff;
+            border-radius: 10px;
+            margin-top: 20px;
+            width: 100%;
+            max-width: 400px;
+            box-sizing: border-box;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .exercise-details h2 {
+            margin-top: 0;
+            font-size: 1.5em;
+            color: #333;
+        }
+        .exercise-details p {
+            margin: 10px 0;
+            color: #666;
+        }
+        .exercise-details strong {
+            color: #333;
+        }
+        #status-message {
+            text-align: center;
+            padding: 10px;
+            margin-top: 10px;
+            border-radius: 5px;
+            font-size: 14px;
+            display: none;
+        }
+        .status-error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-info {
+            background-color: #f8f9fa;
+            color: #383d41;
+            border: 1px solid #d6d8db;
+        }
+        @media (max-width: 768px) {
+            .vjs-big-play-button {
+                width: 50px !important;
+                height: 50px !important;
+                line-height: 50px !important;
+            }
+            .vjs-big-play-button .vjs-icon-placeholder:before {
+                font-size: 25px !important;
+            }
+            .container {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="video-container">
-        <video
-            id="animationVideo"
-            class="video-js vjs-default-skin vjs-big-play-centered"
-            controls
-            preload="auto"
-            data-setup='{}'
-        >
-            <source id="videoSource" type="video/mp4">
-            <p class="vjs-no-js">
-                To view this video please enable JavaScript, and consider upgrading to a
-                web browser that <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
-            </p>
-        </video>
+    <div class="container">
+        <div class="video-container">
+            <video id="videoPlayer" class="video-js vjs-default-skin" controls preload="auto" playsinline></video>
+            <div class="language-dropdown">
+                <button class="language-button">Language</button>
+                <ul id="languageMenu" class="language-menu"></ul>
+            </div>
+        </div>
+        <div id="status-message"></div>
+        <div class="exercise-details">
+            <h2 id="exercise-title">Loading...</h2>
+            <p><strong>Repetitions:</strong> <span id="exercise-repetitions">Loading...</span></p>
+            <p><strong>Reminder:</strong> <span id="exercise-reminder">Loading...</span></p>
+        </div>
     </div>
-    
-    <div class="language-control">
-        <select id="languageSelect" class="language-select" onchange="switchLanguage(this.value)">
-            <option value="en">English</option>
-            <option value="es">Spanish</option>
-        </select>
-    </div>
-    
-    <!-- Video.js Script -->
-    <script src="https://vjs.zencdn.net/8.8.0/video.min.js"></script>
-    <script src="/public/script.js"></script>
+
+    <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
     <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const id = window.location.pathname.split('/').pop();
-        const lang = urlParams.get('lang') || 'en';
-        
-        // Set selected language in dropdown
-        document.getElementById('languageSelect').value = lang;
-        
-        // Add a status display
-        const statusDiv = document.createElement('div');
-        statusDiv.className = 'status-container';
-        statusDiv.style.backgroundColor = '#f8f9fa';
-        statusDiv.style.border = '1px solid #ddd';
-        document.body.appendChild(statusDiv);
-        statusDiv.textContent = 'Loading video...';
-        
-        // Initialize player
-        let player;
-        
-        function switchLanguage(newLang) {
-            window.location.href = `/embed/${id}?lang=${newLang}`;
-        }
-        
-        function initializePlayer(videoUrl) {
-            if (player) {
-                player.dispose();
+        // Initialize global variables
+        const player = videojs('videoPlayer', {
+            fluid: false,
+            width: 400,
+            height: 400,
+            controlBar: {
+                children: [
+                    'playToggle',
+                    'volumePanel',
+                    'currentTimeDisplay',
+                    'progressControl',
+                    'fullscreenToggle'
+                ]
             }
-            
-            player = videojs('animationVideo', {
-                controls: true,
-                autoplay: false,
-                preload: 'auto',
-                fluid: true,
-                responsive: true,
-                playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2]
-            });
-            
-            player.src({
-                src: videoUrl,
-                type: 'video/mp4'
-            });
-            
-            player.on('loadeddata', function() {
-                statusDiv.textContent = 'Video loaded successfully!';
-                statusDiv.style.backgroundColor = '#d4edda';
-                statusDiv.style.border = '1px solid #c3e6cb';
-                setTimeout(() => {
-                    statusDiv.style.display = 'none';
-                }, 3000);
-            });
-            
-            player.on('error', function(e) {
-                console.error('Video error:', player.error());
-                statusDiv.textContent = `Error loading video. The video file might not exist or might be in an unsupported format.`;
-                statusDiv.style.backgroundColor = '#f8d7da';
-                statusDiv.style.border = '1px solid #f5c6cb';
-            });
+        });
+
+        // Disable picture-in-picture
+        player.pipButton = undefined;
+        if (player.tech_) {
+            player.tech_.off('dblclick');
+            if (player.tech_.el_) {
+                player.tech_.el_.disablePictureInPicture = true;
+            }
         }
-        
-        fetch(`/api/video/${id}?lang=${lang}`)
-            .then(response => {
+
+        // Set up status message display
+        const statusMessage = document.getElementById('status-message');
+        function showStatus(message, type = 'info') {
+            statusMessage.textContent = message;
+            statusMessage.className = '';
+            statusMessage.classList.add(`status-${type}`);
+            statusMessage.style.display = 'block';
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    statusMessage.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        function setupControlBarFadeOut() {
+            const controlBar = player.controlBar.el_;
+            let timeoutId = null;
+
+            function showControlBar() {
+                controlBar.classList.remove('vjs-hidden');
+                controlBar.classList.add('vjs-visible');
+            }
+
+            function hideControlBar() {
+                controlBar.classList.remove('vjs-visible');
+                controlBar.classList.add('vjs-hidden');
+            }
+
+            function resetFadeTimeout() {
+                if (timeoutId) {
+                    clearTimeout(timeoutId);
+                }
+                showControlBar();
+                timeoutId = setTimeout(hideControlBar, 3000);
+            }
+
+            ['mousemove', 'mousedown', 'touchstart', 'touchmove', 'click', 'keydown'].forEach(event => {
+                player.el_.addEventListener(event, resetFadeTimeout);
+            });
+
+            player.on('pause', showControlBar);
+            player.on('play', resetFadeTimeout);
+        }
+
+        player.ready(() => {
+            console.log('Player ready');
+            setupControlBarFadeOut();
+        });
+
+        let currentVideoId = null;
+        let currentLang = 'en';
+        let isAtEnd = false;
+
+        function updateDurationDisplay(duration) {
+            const durationDisplay = player.controlBar.getChild('durationDisplay')?.el_;
+            if (durationDisplay) {
+                const minutes = Math.floor(duration / 60);
+                const seconds = Math.floor(duration % 60);
+                durationDisplay.innerHTML = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            }
+            player.duration(duration);
+            player.trigger('durationchange');
+        }
+
+        function updateCurrentTimeDisplay() {
+            const currentTimeDisplay = player.controlBar.getChild('currentTimeDisplay')?.el_;
+            if (currentTimeDisplay) {
+                const currentTime = player.currentTime();
+                const minutes = Math.floor(currentTime / 60);
+                const seconds = Math.floor(currentTime % 60);
+                currentTimeDisplay.innerHTML = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+            }
+        }
+
+        async function loadVideo(id, language) {
+            if (!id) {
+                console.error('No video ID provided');
+                showStatus('Error: No video ID provided', 'error');
+                return;
+            }
+
+            currentVideoId = id;
+            currentLang = language || 'en';
+            
+            try {
+                showStatus('Loading video...', 'info');
+                
+                // Add loading state
+                player.addClass('vjs-loading');
+                
+                // Fetch the video URL from the backend
+                const response = await fetch(`/api/video/${id}?lang=${currentLang}`);
                 if (!response.ok) {
                     throw new Error(`Error ${response.status}: ${response.statusText}`);
                 }
-                return response.json();
-            })
-            .then(data => {
-                console.log('Video URL:', data.url);
-                statusDiv.textContent = `Loading video player...`;
-                initializePlayer(data.url);
-            })
-            .catch(err => {
-                console.error('Error loading video:', err);
-                statusDiv.textContent = `Error: ${err.message}`;
-                statusDiv.style.backgroundColor = '#f8d7da';
-                statusDiv.style.border = '1px solid #f5c6cb';
+                
+                const data = await response.json();
+                if (!data.url) {
+                    throw new Error('No video URL returned from server');
+                }
+
+                console.log('Setting video source:', data.url);
+                
+                // Load video
+                player.src({ type: 'video/mp4', src: data.url });
+                player.load();
+
+                // Set up event handlers for video loading
+                player.one('canplay', () => {
+                    console.log('Video can play event triggered');
+                    player.removeClass('vjs-loading');
+                    showStatus('Video loaded successfully!', 'success');
+                    updateDurationDisplay(player.duration());
+                });
+
+                // Set a timeout for loading
+                const loadTimeout = setTimeout(() => {
+                    if (player.hasClass('vjs-loading')) {
+                        player.removeClass('vjs-loading');
+                        showStatus('Video loading took too long. Try refreshing the page.', 'error');
+                    }
+                }, 20000);
+
+                // Clean up timeout on successful load
+                player.one('canplay', () => clearTimeout(loadTimeout));
+                
+                // Fetch animation details
+                loadAnimationDetails(id);
+            } catch (error) {
+                console.error('Error loading video:', error);
+                player.removeClass('vjs-loading');
+                showStatus(`Error: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadAnimationDetails(id) {
+            try {
+                const response = await fetch(`/api/animation/${id}`);
+                if (!response.ok) {
+                    throw new Error(`Error ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                // Update exercise details
+                document.getElementById('exercise-title').textContent = data.name || 'Untitled Exercise';
+                document.getElementById('exercise-repetitions').textContent = data.setsrepsduration || 'Not specified';
+                document.getElementById('exercise-reminder').textContent = data.reminder || 'No reminders';
+                
+                // Populate language menu with supported languages
+                populateLanguageMenu(['en', 'es']);
+            } catch (error) {
+                console.error('Error loading animation details:', error);
+                document.getElementById('exercise-title').textContent = 'Error loading animation';
+                document.getElementById('exercise-repetitions').textContent = 'N/A';
+                document.getElementById('exercise-reminder').textContent = 'N/A';
+            }
+        }
+
+        // Set up event handlers
+        player.on('loadedmetadata', () => {
+            console.log("Video loaded metadata. Duration:", player.duration());
+            updateDurationDisplay(player.duration());
+        });
+        
+        player.on('error', (e) => {
+            console.error("Video error:", player.error());
+            player.removeClass('vjs-loading');
+            showStatus(`Error loading video: ${player.error().message || 'Unknown error'}`, 'error');
+        });
+        
+        player.on('play', () => {
+            console.log("Play event triggered.");
+            player.removeClass('vjs-loading');
+            if (isAtEnd) {
+                player.currentTime(0);
+                isAtEnd = false;
+            }
+        });
+        
+        player.on('seeking', () => {
+            isAtEnd = false;
+        });
+        
+        player.on('timeupdate', () => {
+            updateCurrentTimeDisplay();
+            if (player.currentTime() >= player.duration() - 0.1) {
+                isAtEnd = true;
+            }
+        });
+        
+        player.on('ended', () => {
+            player.currentTime(0);
+            player.play();
+        });
+
+        // Set up language menu
+        const languageButton = document.querySelector('.language-button');
+        const languageMenu = document.querySelector('#languageMenu');
+
+        languageButton.addEventListener('click', () => {
+            languageMenu.classList.toggle('visible');
+        });
+
+        // Close menu when clicking outside
+        document.addEventListener('click', (event) => {
+            if (!languageButton.contains(event.target) && !languageMenu.contains(event.target)) {
+                languageMenu.classList.remove('visible');
+            }
+        });
+
+        function populateLanguageMenu(languages) {
+            languageMenu.innerHTML = '';
+            
+            if (!languages || languages.length === 0) {
+                console.error('No languages to populate');
+                return;
+            }
+
+            const languageNames = {
+                "en": "English",
+                "es": "Spanish",
+                "zh": "Chinese",
+                "hi": "Hindi",
+                "ar": "Arabic",
+                "fr": "French",
+                "pt": "Portuguese"
+            };
+
+            // Order languages: English first, Spanish second, then the rest alphabetically
+            const englishLang = languages.includes('en') ? ['en'] : [];
+            const spanishLang = languages.includes('es') ? ['es'] : [];
+            const otherLangs = languages.filter(lang => lang !== 'en' && lang !== 'es');
+            otherLangs.sort((a, b) => {
+                const nameA = languageNames[a] || a.toUpperCase();
+                const nameB = languageNames[b] || b.toUpperCase();
+                return nameA.localeCompare(nameB);
             });
+
+            const orderedLangs = [...englishLang, ...spanishLang, ...otherLangs];
+
+            orderedLangs.forEach(lang => {
+                const itemEl = document.createElement('li');
+                itemEl.className = 'language-item';
+                itemEl.innerHTML = languageNames[lang] || lang.toUpperCase();
+                
+                if (lang === currentLang) {
+                    itemEl.classList.add('vjs-selected');
+                }
+                
+                itemEl.addEventListener('click', () => {
+                    // Only reload if changing language
+                    if (lang !== currentLang) {
+                        loadVideo(currentVideoId, lang);
+                    }
+                    
+                    languageMenu.classList.remove('visible');
+                    const items = languageMenu.querySelectorAll('.language-item');
+                    items.forEach(i => i.classList.remove('vjs-selected'));
+                    itemEl.classList.add('vjs-selected');
+                });
+                
+                languageMenu.appendChild(itemEl);
+            });
+        }
+
+        // Main initialization
+        document.addEventListener('DOMContentLoaded', () => {
+            // Get the video ID from the URL
+            const pathParts = window.location.pathname.split('/');
+            const id = pathParts[pathParts.length - 1];
+            
+            // Get language from URL or default to English
+            const urlParams = new URLSearchParams(window.location.search);
+            const lang = urlParams.get('lang') || 'en';
+            
+            if (id) {
+                loadVideo(id, lang);
+            } else {
+                showStatus('Error: No video ID specified in URL', 'error');
+            }
+        });
     </script>
 </body>
 </html>
