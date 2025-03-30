@@ -73,28 +73,34 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
 
             const hasAudioStream = videoMetadata.streams.some(stream => stream.codec_type === 'audio');
 
-            if (hasAudioStream) {
-                await new Promise((resolve, reject) => {
-                    ffmpeg(videoPath)
-                        .input(adjustedNarrationFile)
-                        .complexFilter(['[0:a][1:a]amix=inputs=2:duration=longest'])
-                        .output(outputVideoFile)
-                        .on('end', resolve)
-                        .on('error', reject)
-                        .run();
-                });
-            } else {
-                await new Promise((resolve, reject) => {
-                    ffmpeg(videoPath)
-                        .input(adjustedNarrationFile)
-                        .outputOptions('-c:v copy')
-                        .outputOptions('-c:a aac')
-                        .output(outputVideoFile)
-                        .on('end', resolve)
-                        .on('error', reject)
-                        .run();
-                });
-            }
+            // Regardless of whether the original video has audio, use the narration file as the audio source
+            await new Promise((resolve, reject) => {
+                // Create a new ffmpeg command for the video file
+                let command = ffmpeg(videoPath)
+                    .input(adjustedNarrationFile)
+                    .outputOptions('-c:v copy')      // Copy video stream without re-encoding
+                    .outputOptions('-c:a aac')       // Use AAC for audio
+                    .outputOptions('-b:a 192k')      // Set audio bitrate
+                    .outputOptions('-map 0:v:0')     // Use the first video stream from the first input
+                    .outputOptions('-map 1:a:0')     // Use the first audio stream from the second input
+                    .output(outputVideoFile);
+                
+                // Log the ffmpeg command for debugging
+                console.log('FFMPEG command:', command._getArguments().join(' '));
+                
+                command.on('start', (commandLine) => {
+                    console.log('FFmpeg started with command:', commandLine);
+                })
+                .on('end', () => {
+                    console.log(`FFmpeg successfully processed ${outputVideoFile}`);
+                    resolve();
+                })
+                .on('error', (err) => {
+                    console.error('FFmpeg error:', err);
+                    reject(err);
+                })
+                .run();
+            });
 
             const spacesPath = `videos/${outputVideoFile}`;
             const videoUrl = await uploadToSpaces(outputVideoFile, spacesPath);

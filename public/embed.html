@@ -221,14 +221,17 @@
         #status-message {
             text-align: center;
             padding: 10px;
-            margin-top: 5px;
-            margin-bottom: 0;
             border-radius: 5px;
             font-size: 14px;
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 380px;
             display: none;
-            max-width: 400px;
-            margin-left: auto;
-            margin-right: auto;
+            z-index: 100;
+            opacity: 0.9;
         }
         .status-error {
             background-color: #f8d7da;
@@ -268,8 +271,8 @@
                 <button class="language-button">Language</button>
                 <ul id="languageMenu" class="language-menu"></ul>
             </div>
+            <div id="status-message"></div>
         </div>
-        <div id="status-message"></div>
         <div class="exercise-details">
             <h2 id="exercise-title">Loading...</h2>
             <p><strong>Repetitions:</strong> <span id="exercise-repetitions">Loading...</span></p>
@@ -418,12 +421,36 @@
                 console.log('Setting video source:', data.url);
                 
                 // Load video
-                player.src({ type: 'video/mp4', src: data.url });
+                console.log('Loading video from URL:', data.url);
+                
+                // Create a source object with proper MIME type
+                player.src({
+                    src: data.url,
+                    type: 'video/mp4'
+                });
+                
+                // Force preload
+                player.preload('auto');
                 player.load();
-
+                
+                // Check if video has audio track
+                player.on('loadedmetadata', function() {
+                    const audioTracks = player.audioTracks();
+                    console.log('Audio tracks found:', audioTracks ? audioTracks.length : 'none');
+                    if (audioTracks && audioTracks.length > 0) {
+                        console.log('Audio track info:', audioTracks[0]);
+                    }
+                });
+                
                 // Set up event handlers for video loading
                 player.one('canplay', () => {
                     console.log('Video can play event triggered');
+                    console.log('Video duration:', player.duration());
+                    
+                    // Test audio functionality
+                    player.volume(1.0); // Set volume to maximum
+                    console.log('Player volume set to:', player.volume());
+                    
                     player.removeClass('vjs-loading');
                     showStatus('Video loaded successfully!', 'success');
                     updateDurationDisplay(player.duration());
