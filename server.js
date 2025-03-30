@@ -5,6 +5,7 @@ const path = require('path');
 const pool = require('./src/db/index');
 const adminRoutes = require('./src/routes/admin');
 const apiRoutes = require('./src/routes/api');
+const initializeDatabase = require('./init-db');
 
 const app = express();
 const port = process.env.PORT || 10000;
@@ -29,4 +30,10 @@ videoQueue.isReady().then(() => {
 
 require('./src/services/worker');
 
-app.listen(port, host, () => console.log(`Server running on port ${port}`));
+// Initialize database before starting the server
+initializeDatabase().then(() => {
+    app.listen(port, host, () => console.log(`Server running on port ${port}`));
+}).catch(err => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+});

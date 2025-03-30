@@ -31,7 +31,7 @@ async function adjustNarrationDuration(inputPath, outputPath, videoDuration) {
         audioFilters.push(`apad=pad_dur=${paddingDuration}`);
     }
 
-    return newPromise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         ffmpeg(inputPath)
             .audioFilters(audioFilters)
             .output(outputPath)

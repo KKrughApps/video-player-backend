@@ -28,5 +28,16 @@ module.exports = (pool) => {
         }
     });
 
+    router.get('/animation/:id', async (req, res) => {
+        const { id } = req.params;
+        try {
+            const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
+            if (animation.rows.length === 0) return res.status(404).json({ error: 'Animation not found' });
+            res.json(animation.rows[0]);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
     return router;
 };

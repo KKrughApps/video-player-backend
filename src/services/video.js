@@ -2,15 +2,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const ffmpeg = require('fluent-ffmpeg');
 const axios = require('axios');
-const AWS = require('aws-sdk');
-
-// Configure DigitalOcean Spaces
-const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_ENDPOINT);
-const s3 = new AWS.S3({
-    endpoint: spacesEndpoint,
-    accessKeyId: process.env.SPACES_KEY,
-    secretAccessKey: process.env.SPACES_SECRET
-});
+const { uploadToSpaces } = require('../utils/spaces');
 
 async function generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration) {
     console.log(`Starting generateNarratedVideos for animation ${animationId}`);
@@ -105,15 +97,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
             }
 
             const spacesPath = `videos/${outputVideoFile}`;
-            await s3.upload({
-                Bucket: process.env.SPACES_BUCKET,
-                Key: spacesPath,
-                Body: await fs.readFile(outputVideoFile),
-                ContentType: 'video/mp4',
-                ACL: 'public-read'
-            }).promise();
-
-            const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${spacesPath}`;
+            const videoUrl = await uploadToSpaces(outputVideoFile, spacesPath);
             await fs.unlink(narrationFile);
             await fs.unlink(adjustedNarrationFile);
             await fs.unlink(outputVideoFile);
