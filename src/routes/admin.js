@@ -68,21 +68,40 @@ module.exports = (pool) => {
         const { name, voiceoverText, setsRepsDuration, reminder, twoSided } = req.body;
         console.log('File upload request received:', { 
             body: req.body,
-            file: req.file,
+            file: req.file ? {
+                filename: req.file.filename,
+                mimetype: req.file.mimetype,
+                size: req.file.size
+            } : null,
+            fieldname: req.file ? req.file.fieldname : null,
             hasFile: !!req.file 
         });
         
-        if (!req.file) {
-            console.error('No file found in request');
-            return res.status(400).send('Error: Video file is required');
+        // For debugging form data
+        console.log('Form data submitted:', req.body);
+        console.log('Files submitted:', req.files || 'No files array');
+        console.log('Single file:', req.file || 'No single file');
+        
+        // Make video optional - generate animation entry without video if needed
+        let videoPath = null;
+        let originalDuration = 30.0; // Default duration if no video
+        
+        if (req.file) {
+            videoPath = req.file.path;
+            console.log('Video path:', videoPath);
+            
+            try {
+                originalDuration = await getVideoDuration(videoPath);
+                console.log('Video duration:', originalDuration);
+            } catch (durationError) {
+                console.error('Error getting video duration:', durationError);
+                // Continue with default duration
+            }
+        } else {
+            console.log('No video file uploaded, creating animation without video');
         }
         
-        const videoPath = req.file.path;
-        console.log('Video path:', videoPath);
-        
         try {
-            const originalDuration = await getVideoDuration(videoPath);
-            console.log('Video duration:', originalDuration);
             
             const result = await pool.query(
                 `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
