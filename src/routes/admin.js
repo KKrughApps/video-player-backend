@@ -3,9 +3,9 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs').promises;
-const { generateNarratedVideos } = require('../services/video');
 const { getVideoDuration } = require('../utils/file');
 const { deleteFromSpaces } = require('../utils/spaces');
+const videoQueue = require('../services/jobQueue'); // Import the Bull queue
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => cb(null, 'videos/'),
@@ -50,7 +50,13 @@ module.exports = (pool) => {
                 [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration]
             );
             const animationId = result.rows[0].id;
-            await generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration);
+            // Queue the video generation task instead of calling it directly
+            await videoQueue.add('generate-narrated-videos', {
+                animationId,
+                videoPath,
+                voiceoverText,
+                originalDuration
+            });
             res.redirect('/admin/dashboard');
         } catch (err) {
             res.status(500).send(`Error adding animation: ${err.message}`);
@@ -79,7 +85,13 @@ module.exports = (pool) => {
                 await fs.unlink(oldVideoPath).catch(err => console.error(`Error deleting old video: ${err.message}`));
             }
 
-            await generateNarratedVideos(id, videoPath, voiceoverText, originalDuration);
+            // Queue the video generation task instead of calling it directly
+            await videoQueue.add('generate-narrated-videos', {
+                animationId: id,
+                videoPath,
+                voiceoverText,
+                originalDuration
+            });
             res.redirect('/admin/dashboard');
         } catch (err) {
             res.status(500).send(`Error updating animation: ${err.message}`);
@@ -92,7 +104,7 @@ module.exports = (pool) => {
             if (animation.rows.length === 0) return res.status(404).json({ error: 'Animation not found' });
 
             const videoPath = animation.rows[0].videoPath;
-            if (videoPath !== 'videos/default.mp4') {
+            if (videoPath && videoPath !== 'videos/default.mp4') { // Add check for videoPath
                 await fs.unlink(videoPath).catch(err => console.error(`Error deleting video file: ${err.message}`));
             }
 
