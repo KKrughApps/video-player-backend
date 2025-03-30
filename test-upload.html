@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test File Upload</title>
+</head>
+<body>
+    <h1>Test File Upload</h1>
+    <form action="/admin/add" method="POST" enctype="multipart/form-data">
+        <input type="text" name="name" value="Test Animation" required>
+        <input type="text" name="voiceoverText" value="Test voiceover text" required>
+        <input type="text" name="setsRepsDuration" value="3 sets of 10 reps">
+        <input type="text" name="reminder" value="Keep your back straight">
+        <input type="file" name="video" accept="video/mp4,video/quicktime,video/x-msvideo" required>
+        <button type="submit">Upload</button>
+    </form>
+</body>
+</html>

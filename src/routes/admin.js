@@ -64,115 +64,162 @@ module.exports = (pool) => {
         }
     });
     router.get('/edit/:id', isAuthenticated, (req, res) => res.sendFile(path.join(__dirname, '../../public', 'edit.html')));
-    router.post('/add', isAuthenticated, upload.single('video'), async (req, res) => {
-        const { name, voiceoverText, setsRepsDuration, reminder, twoSided } = req.body;
-        console.log('File upload request received:', { 
-            body: req.body,
-            file: req.file ? {
-                filename: req.file.filename,
-                mimetype: req.file.mimetype,
-                size: req.file.size
-            } : null,
-            fieldname: req.file ? req.file.fieldname : null,
-            hasFile: !!req.file 
+    router.post('/add', isAuthenticated, (req, res, next) => {
+        console.log("Starting file upload process with multer");
+        console.log("Request headers:", req.headers);
+        console.log("Content-Type:", req.headers['content-type']);
+        
+        // Check if content type is multipart/form-data
+        if (!req.headers['content-type'] || !req.headers['content-type'].includes('multipart/form-data')) {
+            console.error("Invalid content type for file upload:", req.headers['content-type']);
+            return res.status(400).send("Invalid content type. Must be multipart/form-data");
+        }
+        
+        // Use multer middleware with error handling
+        upload.single('video')(req, res, (err) => {
+            if (err) {
+                console.error("Multer error:", err);
+                return res.status(400).send(`Error uploading file: ${err.message}`);
+            }
+            next();
         });
-        
-        // For debugging form data
-        console.log('Form data submitted:', req.body);
-        console.log('Files submitted:', req.files || 'No files array');
-        console.log('Single file:', req.file || 'No single file');
-        
-        // Require video file
-        if (!req.file) {
-            return res.status(400).send('Error: Video file is required');
-        }
-        
-        const videoPath = req.file.path;
-        console.log('Video path:', videoPath);
-        
-        let originalDuration = 30.0; // Default duration
+    }, async (req, res) => {
         try {
-            originalDuration = await getVideoDuration(videoPath);
-            console.log('Video duration:', originalDuration);
-        } catch (durationError) {
-            console.error('Error getting video duration:', durationError);
-            // Continue with default duration
-        }
-        
-        try {
-            
-            const result = await pool.query(
-                `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-                [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration]
-            );
-            const animationId = result.rows[0].id;
-            // Queue the video generation task instead of calling it directly
-            await videoQueue.add('generate-narrated-videos', {
-                animationId,
-                videoPath,
-                voiceoverText,
-                originalDuration
+            const { name, voiceoverText, setsRepsDuration, reminder, twoSided } = req.body;
+            console.log('File upload request received:', { 
+                body: req.body,
+                file: req.file ? {
+                    filename: req.file.filename,
+                    mimetype: req.file.mimetype,
+                    size: req.file.size
+                } : null,
+                fieldname: req.file ? req.file.fieldname : null,
+                hasFile: !!req.file 
             });
-            res.redirect('/admin/dashboard');
+            
+            // For debugging form data
+            console.log('Form data submitted:', req.body);
+            console.log('Files submitted:', req.files || 'No files array');
+            console.log('Single file:', req.file || 'No single file');
+            
+            // Require video file
+            if (!req.file) {
+                return res.status(400).send('Error: Video file is required');
+            }
+        
+            const videoPath = req.file.path;
+            console.log('Video path:', videoPath);
+            
+            let originalDuration = 30.0; // Default duration
+            try {
+                originalDuration = await getVideoDuration(videoPath);
+                console.log('Video duration:', originalDuration);
+            } catch (durationError) {
+                console.error('Error getting video duration:', durationError);
+                // Continue with default duration
+            }
+            
+            try {
+                const result = await pool.query(
+                    `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                    [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration]
+                );
+                const animationId = result.rows[0].id;
+                // Queue the video generation task instead of calling it directly
+                await videoQueue.add('generate-narrated-videos', {
+                    animationId,
+                    videoPath,
+                    voiceoverText,
+                    originalDuration
+                });
+                res.redirect('/admin/dashboard');
+            } catch (err) {
+                res.status(500).send(`Error adding animation: ${err.message}`);
+            }
         } catch (err) {
-            res.status(500).send(`Error adding animation: ${err.message}`);
+            console.error("Error in file upload handling:", err);
+            res.status(500).send(`Error processing upload: ${err.message}`);
         }
     });
-    router.post('/update/:id', isAuthenticated, upload.single('video'), async (req, res) => {
-        const { id } = req.params;
-        const { name, voiceoverText, setsRepsDuration, reminder, twoSided, currentVideoPath } = req.body;
-        const newVideoPath = req.file ? req.file.path : null;
-
+    router.post('/update/:id', isAuthenticated, (req, res, next) => {
+        console.log("Starting file update process with multer");
+        console.log("Request headers:", req.headers);
+        console.log("Content-Type:", req.headers['content-type']);
+        
+        // Check if content type is multipart/form-data
+        if (!req.headers['content-type'] || !req.headers['content-type'].includes('multipart/form-data')) {
+            console.error("Invalid content type for file upload:", req.headers['content-type']);
+            return res.status(400).send("Invalid content type. Must be multipart/form-data");
+        }
+        
+        // Use multer middleware with error handling
+        upload.single('video')(req, res, (err) => {
+            if (err) {
+                console.error("Multer error:", err);
+                return res.status(400).send(`Error uploading file: ${err.message}`);
+            }
+            next();
+        });
+    }, async (req, res) => {
         try {
-            const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
-            if (animation.rows.length === 0) return res.status(404).send('Animation not found');
+            const { id } = req.params;
+            const { name, voiceoverText, setsRepsDuration, reminder, twoSided, currentVideoPath } = req.body;
+            const newVideoPath = req.file ? req.file.path : null;
 
-            const oldVideoPath = animation.rows[0].videopath;
-            
-            // Use currentVideoPath from form if no new file is uploaded
-            const videoPath = newVideoPath || currentVideoPath || oldVideoPath;
-            
-            if (!videoPath) {
-                return res.status(400).send('Error: No video path available');
+            try {
+                const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
+                if (animation.rows.length === 0) return res.status(404).send('Animation not found');
+
+                const oldVideoPath = animation.rows[0].videopath;
+                
+                // Use currentVideoPath from form if no new file is uploaded
+                const videoPath = newVideoPath || currentVideoPath || oldVideoPath;
+                
+                if (!videoPath) {
+                    return res.status(400).send('Error: No video path available');
+                }
+                
+                // Only get new duration if a new video is uploaded
+                const originalDuration = newVideoPath ? 
+                    await getVideoDuration(videoPath) : 
+                    animation.rows[0].originalduration;
+
+                console.log('Update animation:', {
+                    id,
+                    name,
+                    videoPath,
+                    oldVideoPath,
+                    currentVideoPath,
+                    newVideoPath
+                });
+
+                await pool.query(
+                    `UPDATE animations SET name = $1, videopath = $2, voiceovertext = $3, setsrepsduration = $4, reminder = $5, twosided = $6, originalduration = $7
+                     WHERE id = $8`,
+                    [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration, id]
+                );
+
+                // Delete old video file if a new one was uploaded
+                if (newVideoPath && oldVideoPath) {
+                    await fs.unlink(oldVideoPath).catch(err => console.error(`Error deleting old video: ${err.message}`));
+                }
+
+                // Queue the video generation task
+                await videoQueue.add('generate-narrated-videos', {
+                    animationId: id,
+                    videoPath,
+                    voiceoverText,
+                    originalDuration
+                });
+                res.redirect('/admin/dashboard');
+            } catch (err) {
+                console.error('Error in update route:', err);
+                res.status(500).send(`Error updating animation: ${err.message}`);
             }
-            
-            // Only get new duration if a new video is uploaded
-            const originalDuration = newVideoPath ? 
-                await getVideoDuration(videoPath) : 
-                animation.rows[0].originalduration;
-
-            console.log('Update animation:', {
-                id,
-                name,
-                videoPath,
-                oldVideoPath,
-                currentVideoPath,
-                newVideoPath
-            });
-
-            await pool.query(
-                `UPDATE animations SET name = $1, videopath = $2, voiceovertext = $3, setsrepsduration = $4, reminder = $5, twosided = $6, originalduration = $7
-                 WHERE id = $8`,
-                [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration, id]
-            );
-
-            // Delete old video file if a new one was uploaded
-            if (newVideoPath && oldVideoPath) {
-                await fs.unlink(oldVideoPath).catch(err => console.error(`Error deleting old video: ${err.message}`));
-            }
-
-            // Queue the video generation task
-            await videoQueue.add('generate-narrated-videos', {
-                animationId: id,
-                videoPath,
-                voiceoverText,
-                originalDuration
-            });
-            res.redirect('/admin/dashboard');
         } catch (err) {
-            console.error('Error in update route:', err);
-            res.status(500).send(`Error updating animation: ${err.message}`);
+            console.error("Error in file upload handling:", err);
+            res.status(500).send(`Error processing upload: ${err.message}`);
         }
     });
     router.delete('/delete/:id', isAuthenticated, async (req, res) => {
