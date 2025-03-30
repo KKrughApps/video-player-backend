@@ -26,6 +26,7 @@ function playAnimation(id) {
         alert('Invalid animation ID');
         return;
     }
+    // Use the proper embed endpoint
     window.open(`/embed/${id}`, '_blank');
 }
 

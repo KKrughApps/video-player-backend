@@ -21,6 +21,11 @@ app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: f
 app.use('/admin', adminRoutes(pool));
 app.use('/api', apiRoutes(pool));
 
+// Add a direct route for /embed/:id to handle the embed page directly
+app.get('/embed/:id', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'embed.html'));
+});
+
 const videoQueue = require('./src/services/jobQueue');
 videoQueue.isReady().then(() => {
     console.log('Redis connection successful');

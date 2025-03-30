@@ -66,11 +66,16 @@
         fetch(`/api/animation/${id}`)
             .then(response => response.json())
             .then(data => {
-                document.getElementById('name').value = data.name;
-                document.getElementById('voiceoverText').value = data.voiceoverText;
-                document.getElementById('setsRepsDuration').value = data.setsRepsDuration;
-                document.getElementById('reminder').value = data.reminder;
-                document.getElementById('twoSided').checked = data.twoSided === 1;
+                console.log('Animation data:', data); // For debugging
+                document.getElementById('name').value = data.name || '';
+                document.getElementById('voiceoverText').value = data.voiceovertext || '';
+                document.getElementById('setsRepsDuration').value = data.setsrepsduration || '';
+                document.getElementById('reminder').value = data.reminder || '';
+                document.getElementById('twoSided').checked = data.twosided === true;
+            })
+            .catch(err => {
+                console.error('Error fetching animation data:', err);
+                alert('Error loading animation data. Please try again.');
             });
     </script>
 </body>
