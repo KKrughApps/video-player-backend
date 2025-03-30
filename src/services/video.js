@@ -2,10 +2,15 @@ const path = require('path');
 const fs = require('fs').promises;
 const ffmpeg = require('fluent-ffmpeg');
 const axios = require('axios');
-const { Storage } = require('@google-cloud/storage');
-const storage = new Storage();
-const bucketName = process.env.SPACES_BUCKET;
-const spacesEndpoint = process.env.SPACES_ENDPOINT;
+const AWS = require('aws-sdk');
+
+// Configure DigitalOcean Spaces
+const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_ENDPOINT);
+const s3 = new AWS.S3({
+    endpoint: spacesEndpoint,
+    accessKeyId: process.env.SPACES_KEY,
+    secretAccessKey: process.env.SPACES_SECRET
+});
 
 async function generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration) {
     console.log(`Starting generateNarratedVideos for animation ${animationId}`);
@@ -67,7 +72,6 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
                     .run();
             });
 
-            // Check if the input video has an audio stream
             const videoMetadata = await new Promise((resolve, reject) => {
                 ffmpeg.ffprobe(videoPath, (err, metadata) => {
                     if (err) return reject(err);
@@ -78,25 +82,21 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
             const hasAudioStream = videoMetadata.streams.some(stream => stream.codec_type === 'audio');
 
             if (hasAudioStream) {
-                // If the video has audio, mix it with the narration
                 await new Promise((resolve, reject) => {
                     ffmpeg(videoPath)
                         .input(adjustedNarrationFile)
-                        .complexFilter([
-                            '[0:a][1:a]amix=inputs=2:duration=longest',
-                        ])
+                        .complexFilter(['[0:a][1:a]amix=inputs=2:duration=longest'])
                         .output(outputVideoFile)
                         .on('end', resolve)
                         .on('error', reject)
                         .run();
                 });
             } else {
-                // If the video has no audio, just add the narration as the audio stream
                 await new Promise((resolve, reject) => {
                     ffmpeg(videoPath)
                         .input(adjustedNarrationFile)
-                        .outputOptions('-c:v copy') // Copy video stream without re-encoding
-                        .outputOptions('-c:a aac')  // Encode audio as AAC
+                        .outputOptions('-c:v copy')
+                        .outputOptions('-c:a aac')
                         .output(outputVideoFile)
                         .on('end', resolve)
                         .on('error', reject)
@@ -105,14 +105,15 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
             }
 
             const spacesPath = `videos/${outputVideoFile}`;
-            await storage.bucket(bucketName).upload(outputVideoFile, {
-                destination: spacesPath,
-                metadata: {
-                    contentType: 'video/mp4',
-                },
-            });
+            await s3.upload({
+                Bucket: process.env.SPACES_BUCKET,
+                Key: spacesPath,
+                Body: await fs.readFile(outputVideoFile),
+                ContentType: 'video/mp4',
+                ACL: 'public-read'
+            }).promise();
 
-            const videoUrl = `https://${bucketName}.${spacesEndpoint}/${spacesPath}`;
+            const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${spacesPath}`;
             await fs.unlink(narrationFile);
             await fs.unlink(adjustedNarrationFile);
             await fs.unlink(outputVideoFile);
