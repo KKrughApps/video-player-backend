@@ -36,9 +36,11 @@ videoQueue.isReady().then(() => {
 require('./src/services/worker');
 
 // Initialize database before starting the server
-initializeDatabase().then(() => {
+initializeDatabase().then((result) => {
+    // Start the server regardless of database initialization result
     app.listen(port, host, () => console.log(`Server running on port ${port}`));
 }).catch(err => {
     console.error('Failed to initialize database:', err);
-    process.exit(1);
+    // Start the server despite database error - it may work with existing data
+    app.listen(port, host, () => console.log(`Server running on port ${port} (despite database initialization error)`));
 });

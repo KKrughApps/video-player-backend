@@ -10,7 +10,7 @@ const createTableSQL = `
 CREATE TABLE IF NOT EXISTS animations (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
-    videoPath TEXT NULL,
+    videoPath TEXT NOT NULL,
     voiceoverText TEXT,
     setsRepsDuration TEXT,
     reminder TEXT,
@@ -25,7 +25,7 @@ const animation = {
     setsRepsDuration: 'Perform 3 sets of 10 repetitions.',
     reminder: 'Maintain proper form throughout the exercise.',
     voiceoverText: 'This is a sample exercise. Please upload your own exercise videos to begin.',
-    videoPath: null, // No default video file
+    videoPath: 'placeholder.mp4', // Placeholder path - should not violate NOT NULL constraint
     twoSided: false,
     originalDuration: 30.0
 };
@@ -43,20 +43,27 @@ async function initializeDatabase() {
             return;
         }
 
-        // Insert sample animation
-        const result = await pool.query(
-            `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-             VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-            [animation.name, animation.videoPath, animation.voiceoverText, animation.setsRepsDuration, animation.reminder, animation.twoSided, animation.originalDuration]
-        );
-        const originalId = result.rows[0].id;
+        try {
+            // Insert sample animation
+            const result = await pool.query(
+                `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+                [animation.name, animation.videoPath, animation.voiceoverText, animation.setsRepsDuration, animation.reminder, animation.twoSided, animation.originalDuration]
+            );
+            const originalId = result.rows[0].id;
 
-        // No need to create a flipped version for the sample
-        console.log('Sample animation inserted successfully:', { id: originalId });
+            // No need to create a flipped version for the sample
+            console.log('Sample animation inserted successfully:', { id: originalId });
+        } catch (insertError) {
+            console.error('Warning: Error inserting sample animation, but continuing:', insertError.message);
+            // Continue without failing - the database is still usable without the sample
+        }
+        
+        return true;
     } catch (err) {
         console.error('Error initializing database:', err);
-    } finally {
-        // Don't close the pool as it might be used by the app
+        // Don't throw the error - let the application continue
+        return false;
     }
 }
 
