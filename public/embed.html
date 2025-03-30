@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Embedded Animation</title>
+    <!-- Video.js CSS -->
+    <link href="https://vjs.zencdn.net/8.8.0/video-js.css" rel="stylesheet" />
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -13,6 +15,7 @@
             flex-direction: column;
             align-items: center;
             background-color: #f8f9fa;
+            color: #333;
         }
         .video-container {
             width: 100%;
@@ -22,27 +25,29 @@
             border-radius: 8px;
             overflow: hidden;
         }
-        #animationVideo {
+        .video-js {
             width: 100%;
-            height: auto;
+            height: 360px;
+        }
+        .vjs-big-play-button {
+            top: 50% !important;
+            left: 50% !important;
+            transform: translate(-50%, -50%);
+        }
+        .language-control {
+            margin: 10px auto;
+            max-width: 640px;
+            position: relative;
+        }
+        .language-select {
             display: block;
-        }
-        .controls {
-            display: flex;
-            justify-content: center;
-            margin-top: 10px;
-            gap: 10px;
-        }
-        .language-btn {
-            padding: 8px 16px;
-            background-color: #007bff;
-            color: white;
-            border: none;
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
             border-radius: 4px;
+            background-color: white;
+            font-size: 16px;
             cursor: pointer;
-        }
-        .language-btn:hover {
-            background-color: #0056b3;
         }
         .status-container {
             width: 100%;
@@ -56,32 +61,88 @@
 </head>
 <body>
     <div class="video-container">
-        <video id="animationVideo" controls>
+        <video
+            id="animationVideo"
+            class="video-js vjs-default-skin vjs-big-play-centered"
+            controls
+            preload="auto"
+            data-setup='{}'
+        >
             <source id="videoSource" type="video/mp4">
-            Your browser does not support the video tag.
+            <p class="vjs-no-js">
+                To view this video please enable JavaScript, and consider upgrading to a
+                web browser that <a href="https://videojs.com/html5-video-support/" target="_blank">supports HTML5 video</a>
+            </p>
         </video>
     </div>
-    <div class="controls">
-        <button class="language-btn" onclick="switchLanguage('en')">English</button>
-        <button class="language-btn" onclick="switchLanguage('es')">Spanish</button>
+    
+    <div class="language-control">
+        <select id="languageSelect" class="language-select" onchange="switchLanguage(this.value)">
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+        </select>
     </div>
+    
+    <!-- Video.js Script -->
+    <script src="https://vjs.zencdn.net/8.8.0/video.min.js"></script>
     <script src="/public/script.js"></script>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
         const id = window.location.pathname.split('/').pop();
         const lang = urlParams.get('lang') || 'en';
         
+        // Set selected language in dropdown
+        document.getElementById('languageSelect').value = lang;
+        
         // Add a status display
         const statusDiv = document.createElement('div');
         statusDiv.className = 'status-container';
         statusDiv.style.backgroundColor = '#f8f9fa';
         statusDiv.style.border = '1px solid #ddd';
-        
         document.body.appendChild(statusDiv);
         statusDiv.textContent = 'Loading video...';
         
+        // Initialize player
+        let player;
+        
         function switchLanguage(newLang) {
             window.location.href = `/embed/${id}?lang=${newLang}`;
+        }
+        
+        function initializePlayer(videoUrl) {
+            if (player) {
+                player.dispose();
+            }
+            
+            player = videojs('animationVideo', {
+                controls: true,
+                autoplay: false,
+                preload: 'auto',
+                fluid: true,
+                responsive: true,
+                playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 2]
+            });
+            
+            player.src({
+                src: videoUrl,
+                type: 'video/mp4'
+            });
+            
+            player.on('loadeddata', function() {
+                statusDiv.textContent = 'Video loaded successfully!';
+                statusDiv.style.backgroundColor = '#d4edda';
+                statusDiv.style.border = '1px solid #c3e6cb';
+                setTimeout(() => {
+                    statusDiv.style.display = 'none';
+                }, 3000);
+            });
+            
+            player.on('error', function(e) {
+                console.error('Video error:', player.error());
+                statusDiv.textContent = `Error loading video. The video file might not exist or might be in an unsupported format.`;
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.border = '1px solid #f5c6cb';
+            });
         }
         
         fetch(`/api/video/${id}?lang=${lang}`)
@@ -93,29 +154,8 @@
             })
             .then(data => {
                 console.log('Video URL:', data.url);
-                statusDiv.textContent = `Attempting to load: ${data.url}`;
-                
-                const videoSource = document.getElementById('videoSource');
-                videoSource.src = data.url;
-                
-                const video = document.getElementById('animationVideo');
-                
-                // Add event listeners for video loading
-                video.addEventListener('loadeddata', () => {
-                    statusDiv.textContent = 'Video loaded successfully!';
-                    statusDiv.style.backgroundColor = '#d4edda';
-                    statusDiv.style.border = '1px solid #c3e6cb';
-                });
-                
-                video.addEventListener('error', (e) => {
-                    console.error('Video error:', e);
-                    statusDiv.textContent = `Error loading video. The video file might not exist or might be in an unsupported format.`;
-                    statusDiv.style.backgroundColor = '#f8d7da';
-                    statusDiv.style.border = '1px solid #f5c6cb';
-                });
-                
-                // Now load the video
-                video.load();
+                statusDiv.textContent = `Loading video player...`;
+                initializePlayer(data.url);
             })
             .catch(err => {
                 console.error('Error loading video:', err);
