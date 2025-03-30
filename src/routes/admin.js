@@ -41,7 +41,10 @@ module.exports = (pool) => {
     router.get('/edit/:id', isAuthenticated, (req, res) => res.sendFile(path.join(__dirname, '../../public', 'edit.html')));
     router.post('/add', isAuthenticated, upload.single('video'), async (req, res) => {
         const { name, voiceoverText, setsRepsDuration, reminder, twoSided } = req.body;
-        const videoPath = req.file ? req.file.path : 'videos/default.mp4';
+        if (!req.file) {
+            return res.status(400).send('Error: Video file is required');
+        }
+        const videoPath = req.file.path;
         try {
             const originalDuration = await getVideoDuration(videoPath);
             const result = await pool.query(
@@ -74,7 +77,11 @@ module.exports = (pool) => {
             const oldVideoPath = animation.rows[0].videopath;
             
             // Use currentVideoPath from form if no new file is uploaded
-            const videoPath = newVideoPath || currentVideoPath || oldVideoPath || 'videos/default.mp4';
+            const videoPath = newVideoPath || currentVideoPath || oldVideoPath;
+            
+            if (!videoPath) {
+                return res.status(400).send('Error: No video path available');
+            }
             
             // Only get new duration if a new video is uploaded
             const originalDuration = newVideoPath ? 
@@ -96,8 +103,8 @@ module.exports = (pool) => {
                 [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration, id]
             );
 
-            // Delete old video file if a new one was uploaded (but not the default)
-            if (newVideoPath && oldVideoPath && oldVideoPath !== 'videos/default.mp4') {
+            // Delete old video file if a new one was uploaded
+            if (newVideoPath && oldVideoPath) {
                 await fs.unlink(oldVideoPath).catch(err => console.error(`Error deleting old video: ${err.message}`));
             }
 
@@ -120,8 +127,8 @@ module.exports = (pool) => {
             const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
             if (animation.rows.length === 0) return res.status(404).json({ error: 'Animation not found' });
 
-            const videoPath = animation.rows[0].videoPath;
-            if (videoPath && videoPath !== 'videos/default.mp4') { // Add check for videoPath
+            const videoPath = animation.rows[0].videopath;
+            if (videoPath) {
                 await fs.unlink(videoPath).catch(err => console.error(`Error deleting video file: ${err.message}`));
             }
 

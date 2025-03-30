@@ -393,8 +393,17 @@
                 
                 // Fetch the video URL from the backend
                 const response = await fetch(`/api/video/${id}?lang=${currentLang}`);
+                
                 if (!response.ok) {
-                    throw new Error(`Error ${response.status}: ${response.statusText}`);
+                    const responseData = await response.json().catch(() => ({}));
+                    
+                    // Handle specific cases
+                    if (response.status === 404 && responseData.status === 'PROCESSING') {
+                        showStatus('This animation is still processing or has no video uploaded. Please check back later.', 'info');
+                        return; // Exit early, don't try to load video
+                    }
+                    
+                    throw new Error(responseData.error || `Error ${response.status}: ${response.statusText}`);
                 }
                 
                 const data = await response.json();

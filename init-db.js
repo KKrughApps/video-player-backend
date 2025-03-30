@@ -19,14 +19,14 @@ CREATE TABLE IF NOT EXISTS animations (
     paired_animation_id INTEGER
 );`;
 
-// Sample animation for initial database
+// Sample animation for initial database - this won't be used unless database is empty
 const animation = {
-    name: 'Foam Roller Front of Thighs Left',
-    setsRepsDuration: 'Roll for 30 seconds to 1 minute.',
-    reminder: 'Keep your rolling speed slow and controlled.',
-    voiceoverText: 'Start, by lying face down, with your forearms and elbows, on the floor. The roller is positioned, at mid thigh level. Keeping your legs relaxed, and your knees comfortably straight, distribute your weight slightly more, to your left thigh, while still keeping your hips level. This will put the majority of the pressure, into your left thigh. From this position, roll from just above your knee, to just below your hip, and back and forth slowly. Continue keeping your legs relaxed, your back flat, and your vision on the floor, to maintain your neck and back alignment, throughout the movement.',
-    videoPath: 'videos/default.mp4',
-    twoSided: true,
+    name: 'Sample Exercise',
+    setsRepsDuration: 'Perform 3 sets of 10 repetitions.',
+    reminder: 'Maintain proper form throughout the exercise.',
+    voiceoverText: 'This is a sample exercise. Please upload your own exercise videos to begin.',
+    videoPath: null, // No default video file
+    twoSided: false,
     originalDuration: 30.0
 };
 
@@ -51,31 +51,8 @@ async function initializeDatabase() {
         );
         const originalId = result.rows[0].id;
 
-        // If two-sided, create the opposite side
-        if (animation.twoSided) {
-            const flippedName = animation.name.replace(/left/i, 'right').replace(/Left/i, 'Right');
-            const flippedVoiceoverText = animation.voiceoverText
-                .replace(/left/ig, 'RIGHT_TEMP')
-                .replace(/right/ig, 'left')
-                .replace(/RIGHT_TEMP/g, 'right')
-                .replace(/Left/ig, 'RIGHT_TEMP')
-                .replace(/Right/ig, 'Left')
-                .replace(/RIGHT_TEMP/g, 'Right');
-
-            const flippedResult = await pool.query(
-                `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration, paired_animation_id)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-                [flippedName, animation.videoPath, flippedVoiceoverText, animation.setsRepsDuration, animation.reminder, animation.twoSided, animation.originalDuration, originalId]
-            );
-            const flippedId = flippedResult.rows[0].id;
-
-            // Update the original to reference the flipped version
-            await pool.query('UPDATE animations SET paired_animation_id = $1 WHERE id = $2', [flippedId, originalId]);
-
-            console.log('Animations inserted successfully:', { originalId, flippedId });
-        } else {
-            console.log('Animation inserted successfully:', { id: originalId });
-        }
+        // No need to create a flipped version for the sample
+        console.log('Sample animation inserted successfully:', { id: originalId });
     } catch (err) {
         console.error('Error initializing database:', err);
     } finally {
