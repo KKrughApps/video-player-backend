@@ -64,28 +64,44 @@ module.exports = (pool) => {
     });
     router.post('/update/:id', isAuthenticated, upload.single('video'), async (req, res) => {
         const { id } = req.params;
-        const { name, voiceoverText, setsRepsDuration, reminder, twoSided } = req.body;
+        const { name, voiceoverText, setsRepsDuration, reminder, twoSided, currentVideoPath } = req.body;
         const newVideoPath = req.file ? req.file.path : null;
 
         try {
             const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
             if (animation.rows.length === 0) return res.status(404).send('Animation not found');
 
-            const oldVideoPath = animation.rows[0].videoPath;
-            const videoPath = newVideoPath || oldVideoPath;
-            const originalDuration = newVideoPath ? await getVideoDuration(videoPath) : animation.rows[0].originalDuration;
+            const oldVideoPath = animation.rows[0].videopath;
+            
+            // Use currentVideoPath from form if no new file is uploaded
+            const videoPath = newVideoPath || currentVideoPath || oldVideoPath || 'videos/default.mp4';
+            
+            // Only get new duration if a new video is uploaded
+            const originalDuration = newVideoPath ? 
+                await getVideoDuration(videoPath) : 
+                animation.rows[0].originalduration;
+
+            console.log('Update animation:', {
+                id,
+                name,
+                videoPath,
+                oldVideoPath,
+                currentVideoPath,
+                newVideoPath
+            });
 
             await pool.query(
-                `UPDATE animations SET name = $1, videoPath = $2, voiceoverText = $3, setsRepsDuration = $4, reminder = $5, twoSided = $6, originalDuration = $7
+                `UPDATE animations SET name = $1, videopath = $2, voiceovertext = $3, setsrepsduration = $4, reminder = $5, twosided = $6, originalduration = $7
                  WHERE id = $8`,
                 [name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided === 'on', originalDuration, id]
             );
 
-            if (newVideoPath && oldVideoPath !== 'videos/default.mp4') {
+            // Delete old video file if a new one was uploaded (but not the default)
+            if (newVideoPath && oldVideoPath && oldVideoPath !== 'videos/default.mp4') {
                 await fs.unlink(oldVideoPath).catch(err => console.error(`Error deleting old video: ${err.message}`));
             }
 
-            // Queue the video generation task instead of calling it directly
+            // Queue the video generation task
             await videoQueue.add('generate-narrated-videos', {
                 animationId: id,
                 videoPath,
@@ -94,6 +110,7 @@ module.exports = (pool) => {
             });
             res.redirect('/admin/dashboard');
         } catch (err) {
+            console.error('Error in update route:', err);
             res.status(500).send(`Error updating animation: ${err.message}`);
         }
     });

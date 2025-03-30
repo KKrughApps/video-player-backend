@@ -13,6 +13,23 @@
         }
         h1 {
             text-align: center;
+            position: relative;
+        }
+        .close-btn {
+            position: absolute;
+            right: 20px;
+            top: 0;
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 36px;
+            height: 36px;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         .form-container {
             background-color: white;
@@ -21,6 +38,7 @@
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
             margin: 20px auto;
             max-width: 600px;
+            position: relative;
         }
         .form-container input, .form-container textarea {
             width: 100%;
@@ -38,23 +56,61 @@
             border: none;
             border-radius: 3px;
             cursor: pointer;
+            margin-top: 10px;
         }
         .form-container button:hover {
             background-color: #0056b3;
         }
+        .button-group {
+            display: flex;
+            gap: 10px;
+        }
+        .button-group button {
+            flex: 1;
+        }
+        .cancel-btn {
+            background-color: #6c757d;
+        }
+        .cancel-btn:hover {
+            background-color: #5a6268;
+        }
+        .file-info {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+            margin-bottom: 15px;
+        }
+        .checkbox-container {
+            margin: 15px 0;
+        }
     </style>
 </head>
 <body>
-    <h1>Edit Animation</h1>
+    <h1>
+        Edit Animation
+        <button class="close-btn" onclick="window.close()">&times;</button>
+    </h1>
     <div class="form-container">
         <form id="editForm" action="" method="POST" enctype="multipart/form-data">
-            <input type="file" name="video" accept="video/mp4">
+            <input type="file" name="video" id="videoFile" accept="video/mp4">
+            <div id="currentVideo" class="file-info">Current video: <span id="videoFileName">None</span></div>
+            
             <input type="text" name="name" id="name" placeholder="Name of Exercise/Patient Ed Video" required>
             <textarea name="voiceoverText" id="voiceoverText" placeholder="Voiceover Text (English)" required></textarea>
             <input type="text" name="setsRepsDuration" id="setsRepsDuration" placeholder="Sets/Reps/Duration" required>
             <input type="text" name="reminder" id="reminder" placeholder="Reminder" required>
-            <label><input type="checkbox" name="twoSided" id="twoSided"> Is this two-sided?</label>
-            <button type="submit">Update</button>
+            
+            <div class="checkbox-container">
+                <label><input type="checkbox" name="twoSided" id="twoSided"> Is this two-sided?</label>
+            </div>
+            
+            <div class="button-group">
+                <button type="button" class="cancel-btn" onclick="window.close()">Cancel</button>
+                <button type="submit">Update</button>
+            </div>
+            
+            <!-- Hidden field to preserve videoPath even if no new file is selected -->
+            <input type="hidden" name="currentVideoPath" id="currentVideoPath">
         </form>
     </div>
 
@@ -67,11 +123,25 @@
             .then(response => response.json())
             .then(data => {
                 console.log('Animation data:', data); // For debugging
+                
+                // Populate form fields
                 document.getElementById('name').value = data.name || '';
                 document.getElementById('voiceoverText').value = data.voiceovertext || '';
                 document.getElementById('setsRepsDuration').value = data.setsrepsduration || '';
                 document.getElementById('reminder').value = data.reminder || '';
+                
+                // Handle boolean value properly
                 document.getElementById('twoSided').checked = data.twosided === true;
+                
+                // Show the current video file name and store path
+                if (data.videopath) {
+                    const videoPathParts = data.videopath.split('/');
+                    const fileName = videoPathParts[videoPathParts.length - 1];
+                    document.getElementById('videoFileName').textContent = fileName;
+                    document.getElementById('currentVideoPath').value = data.videopath;
+                } else {
+                    document.getElementById('videoFileName').textContent = 'No video attached';
+                }
             })
             .catch(err => {
                 console.error('Error fetching animation data:', err);
