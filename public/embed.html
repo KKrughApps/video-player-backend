@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Embedded Animation</title>
+</head>
+<body>
+    <video id="animationVideo" controls>
+        <source id="videoSource" type="video/mp4">
+        Your browser does not support the video tag.
+    </video>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const id = window.location.pathname.split('/').pop();
+        const lang = urlParams.get('lang') || 'en';
+        fetch(`/api/video/${id}?lang=${lang}`)
+            .then(response => response.json())
+            .then(data => {
+                const videoSource = document.getElementById('videoSource');
+                videoSource.src = data.url;
+                document.getElementById('animationVideo').load();
+            })
+            .catch(err => console.error('Error loading video:', err));
+    </script>
+</body>
+</html>
