@@ -819,15 +819,34 @@
             fileInput.addEventListener('change', function() {
                 if (fileInput.files.length > 0) {
                     const fileName = fileInput.files[0].name;
-                    fileInputWrapper.innerHTML = `
+                    // Don't replace the input, just add a visual confirmation
+                    const fileConfirmation = document.createElement('div');
+                    fileConfirmation.innerHTML = `
                         <i class="fas fa-check-circle" style="color: var(--success-color);"></i>
-                        <p>Selected: <span>${fileName}</span></p>
-                        <input type="file" id="video" name="video" accept="video/mp4" class="file-input">
+                        <p style="margin-top: 10px;">Selected: <span>${fileName}</span></p>
                     `;
+                    // Clear any previous confirmation
+                    const previousConfirmation = fileInputWrapper.querySelector('.file-confirmation');
+                    if (previousConfirmation) {
+                        fileInputWrapper.removeChild(previousConfirmation);
+                    }
                     
-                    // Reattach event listener to new input
-                    const newFileInput = fileInputWrapper.querySelector('.file-input');
-                    newFileInput.addEventListener('change', arguments.callee);
+                    // Add the confirmation above the file input
+                    fileConfirmation.className = 'file-confirmation';
+                    fileConfirmation.style.textAlign = 'center';
+                    fileConfirmation.style.marginBottom = '10px';
+                    fileInputWrapper.insertBefore(fileConfirmation, fileInput);
+                    
+                    // Update icon and text appearance
+                    const originalIcon = fileInputWrapper.querySelector('.fas.fa-cloud-upload-alt');
+                    if (originalIcon) {
+                        originalIcon.style.display = 'none';
+                    }
+                    
+                    const originalText = fileInputWrapper.querySelector('p:not(.file-confirmation p)');
+                    if (originalText) {
+                        originalText.style.display = 'none';
+                    }
                 }
             });
             
@@ -870,24 +889,35 @@
                 
                 if (files.length > 0) {
                     const fileName = files[0].name;
-                    fileInputWrapper.innerHTML = `
+                    // Don't replace the input, just add a visual confirmation
+                    const fileConfirmation = document.createElement('div');
+                    fileConfirmation.innerHTML = `
                         <i class="fas fa-check-circle" style="color: var(--success-color);"></i>
-                        <p>Selected: <span>${fileName}</span></p>
-                        <input type="file" id="video" name="video" accept="video/mp4" class="file-input">
+                        <p style="margin-top: 10px;">Selected: <span>${fileName}</span></p>
                     `;
                     
-                    // Reattach event listener to new input
-                    const newFileInput = fileInputWrapper.querySelector('.file-input');
-                    newFileInput.addEventListener('change', function() {
-                        if (newFileInput.files.length > 0) {
-                            const fileName = newFileInput.files[0].name;
-                            fileInputWrapper.innerHTML = `
-                                <i class="fas fa-check-circle" style="color: var(--success-color);"></i>
-                                <p>Selected: <span>${fileName}</span></p>
-                                <input type="file" id="video" name="video" accept="video/mp4" class="file-input">
-                            `;
-                        }
-                    });
+                    // Clear any previous confirmation
+                    const previousConfirmation = fileInputWrapper.querySelector('.file-confirmation');
+                    if (previousConfirmation) {
+                        fileInputWrapper.removeChild(previousConfirmation);
+                    }
+                    
+                    // Add the confirmation above the file input
+                    fileConfirmation.className = 'file-confirmation';
+                    fileConfirmation.style.textAlign = 'center';
+                    fileConfirmation.style.marginBottom = '10px';
+                    fileInputWrapper.insertBefore(fileConfirmation, fileInput);
+                    
+                    // Update icon and text appearance
+                    const originalIcon = fileInputWrapper.querySelector('.fas.fa-cloud-upload-alt');
+                    if (originalIcon) {
+                        originalIcon.style.display = 'none';
+                    }
+                    
+                    const originalText = fileInputWrapper.querySelector('p:not(.file-confirmation p)');
+                    if (originalText) {
+                        originalText.style.display = 'none';
+                    }
                 }
             }
         });

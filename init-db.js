@@ -19,16 +19,7 @@ CREATE TABLE IF NOT EXISTS animations (
     paired_animation_id INTEGER
 );`;
 
-// Sample animation for initial database - this won't be used unless database is empty
-const animation = {
-    name: 'Sample Exercise',
-    setsRepsDuration: 'Perform 3 sets of 10 repetitions.',
-    reminder: 'Maintain proper form throughout the exercise.',
-    voiceoverText: 'This is a sample exercise. Please upload your own exercise videos to begin.',
-    videoPath: 'placeholder.mp4', // Placeholder path - should not violate NOT NULL constraint
-    twoSided: false,
-    originalDuration: 30.0
-};
+// No default animations - database will start empty
 
 async function initializeDatabase() {
     try {
@@ -43,21 +34,7 @@ async function initializeDatabase() {
             return;
         }
 
-        try {
-            // Insert sample animation
-            const result = await pool.query(
-                `INSERT INTO animations (name, videoPath, voiceoverText, setsRepsDuration, reminder, twoSided, originalDuration)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-                [animation.name, animation.videoPath, animation.voiceoverText, animation.setsRepsDuration, animation.reminder, animation.twoSided, animation.originalDuration]
-            );
-            const originalId = result.rows[0].id;
-
-            // No need to create a flipped version for the sample
-            console.log('Sample animation inserted successfully:', { id: originalId });
-        } catch (insertError) {
-            console.error('Warning: Error inserting sample animation, but continuing:', insertError.message);
-            // Continue without failing - the database is still usable without the sample
-        }
+        // Removed sample animation insertion to start with a clean database
         
         return true;
     } catch (err) {
