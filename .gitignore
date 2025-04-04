@@ -6,4 +6,4 @@ temp_gif_*.gif
 videos/video_*.mp4
 test_audio.mp3
 .env
-dist/
+dist/.env
