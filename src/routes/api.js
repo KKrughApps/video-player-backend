@@ -5,9 +5,9 @@ const path = require('path');
 module.exports = (pool) => {
     router.get('/video/:id', async (req, res) => {
         const { id } = req.params;
-        const { lang = 'en' } = req.query;
+        const { lang = 'en', fallback = false } = req.query;
         try {
-            console.log(`Getting video for animation ${id} in language ${lang}`);
+            console.log(`Getting video for animation ${id} in language ${lang}, fallback: ${fallback}`);
             
             // Query the database for animation, including language-specific video paths
             const animation = await pool.query(`

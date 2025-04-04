@@ -452,6 +452,52 @@
                     }
                 });
                 
+                // Add better error handling for video loading
+                player.on('error', function(error) {
+                    console.error('Video loading error:', player.error());
+                    
+                    // Create a more user-friendly error message
+                    let userMessage = 'The video could not be loaded. ';
+                    
+                    if (player.error().code === 4) {
+                        userMessage += 'The video format is not supported by your browser.';
+                    } else if (player.error().code === 2) {
+                        userMessage += 'The network connection was interrupted.';
+                    } else {
+                        userMessage += 'Please try again later or contact support.';
+                    }
+                    
+                    // Show a custom error message
+                    showStatus(userMessage, 'error');
+                    
+                    // Try to reload the video with a different source if available
+                    setTimeout(() => {
+                        try {
+                            console.log('Attempting to reload video...');
+                            
+                            // Try to load original source if available
+                            fetch(`/api/video/${id}?lang=${currentLang}&fallback=true`)
+                                .then(response => response.json())
+                                .then(data => {
+                                    if (data.url) {
+                                        console.log('Trying fallback source:', data.url);
+                                        player.src({
+                                            src: data.url,
+                                            type: 'video/mp4'
+                                        });
+                                        player.load();
+                                        showStatus('Trying alternative video source...', 'info');
+                                    }
+                                })
+                                .catch(err => {
+                                    console.error('Error fetching fallback video:', err);
+                                });
+                        } catch (e) {
+                            console.error('Error during fallback attempt:', e);
+                        }
+                    }, 3000);
+                });
+                
                 // Set up event handlers for video loading
                 player.one('canplay', () => {
                     console.log('Video can play event triggered');

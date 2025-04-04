@@ -119,15 +119,37 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
         const finalVideoPath = path.join(tempDir, `video_${animationId}_${language}_full.mp4`);
         const localFinalPath = path.join(videosDir, `video_${animationId}_${language}_full.mp4`);
         
-        // 3. Copy the original video to use as the adjusted video (for now, to simplify)
-        // In a real implementation, we would calculate the proper adjustment based on audio duration
-        await fs.copyFile(videoPath, adjustedVideoPath);
-        console.log(`Created adjusted video at: ${adjustedVideoPath}`);
+        // 3. Adjust the video duration to match the audio
+        try {
+          console.log(`Attempting to adjust video duration using ffmpeg...`);
+          
+          // Use the adjustVideoToAudio function from file.js
+          await adjustVideoToAudio(videoPath, audioPath, adjustedVideoPath);
+          console.log(`Successfully adjusted video at: ${adjustedVideoPath}`);
+        } catch (adjustError) {
+          console.error(`Error adjusting video: ${adjustError.message}`);
+          
+          // Fallback to direct copy if adjustment fails
+          console.log(`Falling back to direct video copy for adjustment...`);
+          await fs.copyFile(videoPath, adjustedVideoPath);
+          console.log(`Created adjusted video (fallback method) at: ${adjustedVideoPath}`);
+        }
         
         // 4. Combine the video with the audio to create the final video
-        // For simplicity, we'll use a direct copy for now
-        await fs.copyFile(videoPath, finalVideoPath);
-        console.log(`Created final video at: ${finalVideoPath}`);
+        try {
+          console.log(`Attempting to combine video and audio using ffmpeg...`);
+          
+          // Use the combineVideoAndAudio function from file.js
+          await combineVideoAndAudio(adjustedVideoPath, audioPath, finalVideoPath);
+          console.log(`Successfully combined video and audio at: ${finalVideoPath}`);
+        } catch (combineError) {
+          console.error(`Error combining video and audio: ${combineError.message}`);
+          
+          // Fallback to direct copy if combining fails
+          console.log(`Falling back to direct video copy...`);
+          await fs.copyFile(videoPath, finalVideoPath);
+          console.log(`Created final video (fallback method) at: ${finalVideoPath}`);
+        }
         
         // 5. Create a copy in the videos directory for local serving
         await fs.copyFile(finalVideoPath, localFinalPath);
