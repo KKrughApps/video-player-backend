@@ -26,22 +26,64 @@ function getS3Client() {
 const s3 = getS3Client();
 
 async function uploadToSpaces(filePath, key) {
+    console.log(`Starting upload to DigitalOcean Spaces: ${filePath} -> ${key}`);
+    
     try {
+        // Check if environment variables are set
+        if (!process.env.SPACES_BUCKET || !process.env.SPACES_ENDPOINT) {
+            throw new Error("Required environment variables missing: SPACES_BUCKET or SPACES_ENDPOINT");
+        }
+        
+        // Validate that the file exists
+        try {
+            await fs.access(filePath, fs.constants.R_OK);
+            console.log(`File exists and is readable: ${filePath}`);
+        } catch (accessError) {
+            console.error(`File not accessible: ${filePath}`, accessError);
+            throw new Error(`File not accessible for upload: ${filePath}`);
+        }
+        
+        // Get file info
+        const fileStats = await fs.stat(filePath);
+        console.log(`File stats: size=${fileStats.size} bytes, created=${fileStats.birthtime}`);
+        
+        // Read file content
+        console.log(`Reading file content: ${filePath}`);
         const fileContent = await fs.readFile(filePath);
-        const uploadResult = await s3.upload({
+        
+        // Set content type based on file extension
+        let contentType = 'video/mp4';
+        if (filePath.toLowerCase().endsWith('.mp3')) {
+            contentType = 'audio/mpeg';
+        }
+        
+        console.log(`Uploading to Spaces: bucket=${process.env.SPACES_BUCKET}, key=${key}, contentType=${contentType}`);
+        const uploadParams = {
             Bucket: process.env.SPACES_BUCKET,
             Key: key,
             Body: fileContent,
             ACL: 'public-read',
-            ContentType: 'video/mp4',
-        }).promise();
+            ContentType: contentType,
+        };
+        
+        console.log('Upload params:', JSON.stringify({
+            ...uploadParams,
+            Body: `<Binary data: ${fileContent.length} bytes>`
+        }, null, 2));
+        
+        const uploadResult = await s3.upload(uploadParams).promise();
+        console.log('Upload successful:', uploadResult);
         
         const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+        console.log(`Generated public URL: ${videoUrl}`);
         
         try {
+            console.log(`Verifying public access: ${videoUrl}`);
             const response = await fetch(videoUrl, { method: 'HEAD' });
             if (!response.ok) {
-                console.warn(`File uploaded but not publicly accessible: ${videoUrl}`);
+                console.warn(`File uploaded but not publicly accessible: ${videoUrl}, status=${response.status}`);
+            } else {
+                console.log(`File is publicly accessible: ${videoUrl}`);
             }
         } catch (fetchError) {
             console.warn(`Could not verify file accessibility: ${fetchError.message}`);
@@ -49,7 +91,7 @@ async function uploadToSpaces(filePath, key) {
         
         return videoUrl;
     } catch (error) {
-        console.error(`Error uploading to Spaces: ${error.message}`);
+        console.error(`Error uploading to Spaces:`, error);
         throw error;
     }
 }

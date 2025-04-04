@@ -53,26 +53,62 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
             const outputVideoFile = `temp_video_${animationId}_${language}_full.mp4`;
 
             console.log(`Calling ElevenLabs API with text: ${translatedText}, language: ${language}`);
-            // Using Liam's voice (male voice)
-            const narrationResponse = await axios({
-                method: 'post',
-                url: `https://api.elevenlabs.io/v1/text-to-speech/${LIAM_VOICE_ID}`,
-                headers: {
-                    'xi-api-key': process.env.ELEVENLABS_API_KEY,
-                    'Content-Type': 'application/json',
-                },
-                data: {
-                    text: translatedText,
-                    voice_settings: {
-                        stability: 0.75,
-                        similarity_boost: 0.75,
+            
+            // Check if API key is set
+            if (!process.env.ELEVENLABS_API_KEY) {
+                console.error('ELEVENLABS_API_KEY environment variable is not set');
+                throw new Error('ElevenLabs API key is missing');
+            }
+            
+            console.log(`Using ElevenLabs voice ID: ${LIAM_VOICE_ID}`);
+            try {
+                // Using Liam's voice (male voice)
+                const narrationResponse = await axios({
+                    method: 'post',
+                    url: `https://api.elevenlabs.io/v1/text-to-speech/${LIAM_VOICE_ID}`,
+                    headers: {
+                        'xi-api-key': process.env.ELEVENLABS_API_KEY,
+                        'Content-Type': 'application/json',
                     },
-                },
-                responseType: 'arraybuffer',
-            });
-
-            await fs.writeFile(narrationFile, narrationResponse.data);
-            console.log(`Generated narration file: ${narrationFile}`);
+                    data: {
+                        text: translatedText,
+                        voice_settings: {
+                            stability: 0.75,
+                            similarity_boost: 0.75,
+                        },
+                    },
+                    responseType: 'arraybuffer',
+                });
+                
+                console.log(`ElevenLabs API response received, data size: ${narrationResponse.data.length} bytes`);
+                
+                // Ensure it's a valid audio file
+                if (!narrationResponse.data || narrationResponse.data.length < 100) {
+                    console.error(`Invalid or empty audio response from ElevenLabs: Size ${narrationResponse.data?.length || 0} bytes`);
+                    throw new Error('Invalid audio response from ElevenLabs');
+                }
+                
+                // Make sure the directory exists for the narration file
+                const narrationDir = path.dirname(narrationFile);
+                await fs.mkdir(narrationDir, { recursive: true }).catch(err => {
+                    console.log(`Narration directory exists or creation failed: ${narrationDir}`, err);
+                });
+                
+                await fs.writeFile(narrationFile, narrationResponse.data);
+                console.log(`Generated narration file: ${narrationFile}, size: ${narrationResponse.data.length} bytes`);
+            } catch (elevenLabsError) {
+                console.error('Error calling ElevenLabs API:', elevenLabsError);
+                
+                if (elevenLabsError.response) {
+                    console.error('ElevenLabs API response:', {
+                        status: elevenLabsError.response.status,
+                        statusText: elevenLabsError.response.statusText,
+                        data: elevenLabsError.response.data
+                    });
+                }
+                
+                throw new Error(`Failed to generate audio with ElevenLabs: ${elevenLabsError.message}`);
+            }
 
             try {
                 // Adjust the video speed to match the narration duration
