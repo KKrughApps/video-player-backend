@@ -1,21 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
 const path = require('path');
+const multer = require('multer');
 const fs = require('fs').promises;
 const { getVideoDuration } = require('../utils/file');
 const { deleteFromSpaces } = require('../utils/spaces');
 const videoQueue = require('../services/jobQueue'); // Import the Bull queue
 
-// Use an absolute path for the upload destination
+// Configure multer to use an absolute path for uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
+    // Use an absolute path to the videos directory
     const videosDir = path.join(__dirname, '..', '..', 'videos');
     cb(null, videosDir);
   },
   filename: (req, file, cb) => {
-    const extension = file.mimetype === 'video/mp4' ? '.mp4' : 
-                      file.mimetype === 'video/quicktime' ? '.mov' : 
+    const extension = file.mimetype === 'video/mp4' ? '.mp4' :
+                      file.mimetype === 'video/quicktime' ? '.mov' :
                       file.mimetype === 'video/x-msvideo' ? '.avi' : '.mp4';
     cb(null, `video_${Date.now()}-${Math.round(Math.random() * 1000000)}${extension}`);
   }
@@ -42,25 +43,48 @@ const upload = multer({
   }
 });
 
-// Simple authentication middleware
+// Authentication middleware
 const isAuthenticated = (req, res, next) => {
   if (req.session.authenticated) return next();
   res.redirect('/admin');
 };
 
 module.exports = (pool) => {
-  // Dashboard route: lists animations
+  // GET /admin - Serve the admin login page (admin.html)
+  router.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', '..', 'public', 'admin.html'));
+  });
+
+  // POST /admin/login - Process the login form
+  router.post('/login', async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      // Example: hard-coded credentials. Update as needed.
+      if (username === 'admin' && password === 'secret123') {
+        req.session.authenticated = true;
+        return res.redirect('/admin/dashboard');
+      }
+      // Invalid credentials; redirect back to login
+      res.redirect('/admin');
+    } catch (error) {
+      console.error('Login error:', error);
+      res.status(500).send('Internal Server Error');
+    }
+  });
+
+  // GET /admin/dashboard - Admin dashboard page
   router.get('/dashboard', isAuthenticated, async (req, res) => {
     try {
       const result = await pool.query('SELECT * FROM animations ORDER BY id DESC');
-      res.render('dashboard', { animations: result.rows });
+      // Serve the dashboard.html file from the public folder
+      res.sendFile(path.join(__dirname, '..', '..', 'public', 'dashboard.html'));
     } catch (error) {
       console.error('Error fetching animations:', error);
       res.status(500).send('Internal Server Error');
     }
   });
 
-  // Route to handle video upload
+  // POST /admin/upload - Handle video uploads
   router.post('/upload', isAuthenticated, upload.single('videoFile'), async (req, res) => {
     try {
       const videoPath = req.file.path;
@@ -90,8 +114,6 @@ module.exports = (pool) => {
       res.status(500).send('Upload failed');
     }
   });
-
-  // Additional admin routes (update, delete, etc.) can be added here
 
   return router;
 };
