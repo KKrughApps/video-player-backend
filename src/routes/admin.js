@@ -43,6 +43,124 @@ module.exports = (pool) => {
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
+  
+  // Delete a specific animation
+  router.delete('/delete/:id', async (req, res) => {
+    if (!req.session.authenticated) return res.status(401).json({ error: 'Unauthorized' });
+    
+    try {
+      const { id } = req.params;
+      
+      // First get the animation details to delete the video file
+      const getQuery = 'SELECT videoPath FROM animations WHERE id = $1';
+      const getResult = await pool.query(getQuery, [id]);
+      
+      if (getResult.rows.length === 0) {
+        return res.status(404).json({ error: 'Animation not found' });
+      }
+      
+      const videoPath = getResult.rows[0].videopath || getResult.rows[0].videoPath;
+      
+      // Delete the animation from the database
+      const deleteQuery = 'DELETE FROM animations WHERE id = $1 RETURNING id';
+      const deleteResult = await pool.query(deleteQuery, [id]);
+      
+      // Attempt to delete the video file if it exists
+      if (videoPath) {
+        try {
+          await fs.access(videoPath);
+          await fs.unlink(videoPath);
+          console.log(`Deleted video file: ${videoPath}`);
+        } catch (fileError) {
+          console.warn(`Could not delete video file: ${videoPath}`, fileError.message);
+          // Continue even if file deletion fails
+        }
+      }
+      
+      // Delete any processed videos from temp directory if they exist
+      const tempDir = path.join(__dirname, '..', '..', 'temp');
+      try {
+        const files = await fs.readdir(tempDir);
+        const relatedFiles = files.filter(file => file.includes(`_${id}_`));
+        
+        for (const file of relatedFiles) {
+          try {
+            await fs.unlink(path.join(tempDir, file));
+            console.log(`Deleted temp file: ${file}`);
+          } catch (err) {
+            console.warn(`Could not delete temp file: ${file}`, err.message);
+          }
+        }
+      } catch (dirError) {
+        console.warn(`Could not access temp directory: ${tempDir}`, dirError.message);
+      }
+      
+      return res.json({ 
+        message: `Animation #${id} deleted successfully`,
+        id: parseInt(id)
+      });
+    } catch (error) {
+      console.error('Error deleting animation:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+  
+  // Clear all animations (for testing/admin purposes)
+  router.delete('/clear-all', async (req, res) => {
+    if (!req.session.authenticated) return res.status(401).json({ error: 'Unauthorized' });
+    
+    try {
+      // Get all animations to delete their video files
+      const getQuery = 'SELECT id, videoPath FROM animations';
+      const getResult = await pool.query(getQuery);
+      
+      // Delete all files
+      for (const row of getResult.rows) {
+        const videoPath = row.videopath || row.videoPath;
+        const id = row.id;
+        
+        if (videoPath) {
+          try {
+            await fs.access(videoPath);
+            await fs.unlink(videoPath);
+            console.log(`Deleted video file: ${videoPath}`);
+          } catch (fileError) {
+            console.warn(`Could not delete video file: ${videoPath}`, fileError.message);
+          }
+        }
+        
+        // Clean temp files for this animation
+        const tempDir = path.join(__dirname, '..', '..', 'temp');
+        try {
+          const files = await fs.readdir(tempDir);
+          const relatedFiles = files.filter(file => file.includes(`_${id}_`));
+          
+          for (const file of relatedFiles) {
+            try {
+              await fs.unlink(path.join(tempDir, file));
+              console.log(`Deleted temp file: ${file}`);
+            } catch (err) {
+              console.warn(`Could not delete temp file: ${file}`, err.message);
+            }
+          }
+        } catch (dirError) {
+          console.warn(`Could not access temp directory: ${tempDir}`, dirError.message);
+        }
+      }
+      
+      // Delete all animations from the database
+      const deleteQuery = 'DELETE FROM animations RETURNING id';
+      const deleteResult = await pool.query(deleteQuery);
+      
+      return res.json({ 
+        message: `${deleteResult.rows.length} animations deleted successfully`,
+        count: deleteResult.rows.length
+      });
+    } catch (error) {
+      console.error('Error clearing animations:', error);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
 
   // Configure multer for video uploads using an absolute path
   const storage = multer.diskStorage({

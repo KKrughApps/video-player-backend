@@ -70,10 +70,94 @@
     .upload-form button:hover {
       background: var(--primary-hover);
     }
-    #animations-list div {
-      border: 1px solid #ccc;
+    .animations-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background-color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .animations-table th, .animations-table td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .animations-table th {
+      background-color: var(--primary-light);
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    .animations-table tr:last-child td {
+      border-bottom: none;
+    }
+    .animations-table tr:hover {
+      background-color: #f9fafb;
+    }
+    .action-buttons {
+      display: flex;
+      gap: 5px;
+    }
+    .btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      font-size: 14px;
+      transition: background-color 0.2s;
+    }
+    .btn-play {
+      background-color: #10b981;
+      color: white;
+    }
+    .btn-play:hover {
+      background-color: #059669;
+    }
+    .btn-edit {
+      background-color: #3b82f6;
+      color: white;
+    }
+    .btn-edit:hover {
+      background-color: #2563eb;
+    }
+    .btn-delete {
+      background-color: #ef4444;
+      color: white;
+    }
+    .btn-delete:hover {
+      background-color: #dc2626;
+    }
+    .btn-clear {
+      background-color: #6b7280;
+      color: white;
+      margin-bottom: 10px;
+    }
+    .btn-clear:hover {
+      background-color: #4b5563;
+    }
+    .status-message {
       padding: 10px;
-      margin-bottom: 5px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .success-message {
+      background-color: #d1fae5;
+      color: #065f46;
+      border: 1px solid #a7f3d0;
+    }
+    .error-message {
+      background-color: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .empty-message {
+      text-align: center;
+      padding: 20px;
+      color: #6b7280;
+      font-style: italic;
     }
   </style>
 </head>
@@ -106,33 +190,161 @@
     </form>
     
     <h2>Existing Animations</h2>
-    <div id="animations-list">
+    <div id="status-message"></div>
+    <button id="clear-all" class="btn btn-clear">Clear All Animations</button>
+    <div id="animations-container">
       <p>Loading animations...</p>
     </div>
   </div>
   
   <script>
+    // Show status message
+    function showStatus(message, type = 'success') {
+      const statusDiv = document.getElementById('status-message');
+      statusDiv.textContent = message;
+      statusDiv.className = 'status-message';
+      statusDiv.classList.add(type === 'success' ? 'success-message' : 'error-message');
+      
+      // Auto hide after 5 seconds
+      setTimeout(() => {
+        statusDiv.textContent = '';
+        statusDiv.className = '';
+      }, 5000);
+    }
+    
+    // Load all animations
     async function loadAnimations() {
       try {
         const response = await fetch('/admin/animations');
         const animations = await response.json();
-        const listDiv = document.getElementById('animations-list');
-        listDiv.innerHTML = '';
+        const container = document.getElementById('animations-container');
+        
         if (animations.length === 0) {
-          listDiv.innerHTML = '<p>No animations found.</p>';
-        } else {
-          animations.forEach(anim => {
-            const item = document.createElement('div');
-            item.textContent = `#${anim.id} - ${anim.name} (Video Path: ${anim.videopath})`;
-            listDiv.appendChild(item);
-          });
+          container.innerHTML = '<p class="empty-message">No animations found.</p>';
+          return;
         }
+        
+        // Create table
+        const table = document.createElement('table');
+        table.className = 'animations-table';
+        
+        // Create table header
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+          <tr>
+            <th>ID</th>
+            <th>Name</th>
+            <th>Sets/Reps</th>
+            <th>Reminder</th>
+            <th>Two Sided</th>
+            <th>Actions</th>
+          </tr>
+        `;
+        table.appendChild(thead);
+        
+        // Create table body
+        const tbody = document.createElement('tbody');
+        animations.forEach(anim => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${anim.id}</td>
+            <td>${anim.name}</td>
+            <td>${anim.setsrepsduration || anim.setsRepsDuration || '-'}</td>
+            <td>${anim.reminder || '-'}</td>
+            <td>${(anim.twosided || anim.twoSided) ? 'Yes' : 'No'}</td>
+            <td class="action-buttons">
+              <button onclick="playAnimation(${anim.id})" class="btn btn-play">Play</button>
+              <button onclick="editAnimation(${anim.id})" class="btn btn-edit">Edit</button>
+              <button onclick="deleteAnimation(${anim.id})" class="btn btn-delete">Delete</button>
+            </td>
+          `;
+          tbody.appendChild(tr);
+        });
+        
+        table.appendChild(tbody);
+        container.innerHTML = '';
+        container.appendChild(table);
       } catch (err) {
         console.error('Error loading animations:', err);
-        document.getElementById('animations-list').innerHTML = '<p>Error loading animations.</p>';
+        document.getElementById('animations-container').innerHTML = '<p class="error-message">Error loading animations.</p>';
       }
     }
-    window.addEventListener('DOMContentLoaded', loadAnimations);
+    
+    // Play an animation
+    function playAnimation(id) {
+      if (!id) {
+        showStatus('Invalid animation ID', 'error');
+        return;
+      }
+      
+      // Open in a new tab
+      window.open(`/api/embed/${id}`, '_blank');
+    }
+    
+    // Edit an animation
+    function editAnimation(id) {
+      showStatus('Edit functionality is not implemented yet.', 'error');
+      // In the future, this would redirect to an edit page
+      // window.location.href = `/admin/edit/${id}`;
+    }
+    
+    // Delete an animation
+    async function deleteAnimation(id) {
+      if (!confirm(`Are you sure you want to delete animation #${id}?`)) {
+        return;
+      }
+      
+      try {
+        const response = await fetch(`/admin/delete/${id}`, {
+          method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          showStatus(data.message, 'success');
+          loadAnimations(); // Reload the list
+        } else {
+          showStatus(data.error || 'Error deleting animation', 'error');
+        }
+      } catch (err) {
+        console.error('Error deleting animation:', err);
+        showStatus('Error deleting animation', 'error');
+      }
+    }
+    
+    // Clear all animations
+    async function clearAllAnimations() {
+      if (!confirm('Are you sure you want to delete ALL animations? This action cannot be undone!')) {
+        return;
+      }
+      
+      try {
+        const response = await fetch('/admin/clear-all', {
+          method: 'DELETE'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+          showStatus(data.message, 'success');
+          loadAnimations(); // Reload the list
+        } else {
+          showStatus(data.error || 'Error clearing animations', 'error');
+        }
+      } catch (err) {
+        console.error('Error clearing animations:', err);
+        showStatus('Error clearing animations', 'error');
+      }
+    }
+    
+    // Set up event listeners
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAnimations();
+      
+      // Set up clear all button
+      document.getElementById('clear-all').addEventListener('click', clearAllAnimations);
+    });
   </script>
 </body>
 </html>
