@@ -138,7 +138,7 @@
             position: absolute;
             top: 10px;
             right: 10px;
-            z-index: 1000;
+            z-index: 1500; /* Increased z-index to be above error messages */
         }
         .language-button {
             background-color: #D3D3D3;
@@ -155,19 +155,22 @@
         }
         .language-menu {
             display: none;
-            position: absolute;
-            top: 100%;
-            right: 0;
+            position: fixed; /* Changed from absolute to fixed for better positioning */
+            top: auto; /* Remove automatic top positioning */
+            right: 10px; /* Match dropdown position */
             background-color: #D3D3D3;
             border: none;
             border-radius: 5px;
-            z-index: 1000;
+            z-index: 1500; /* Increased z-index to be above error messages */
             list-style: none;
             margin: 0;
             padding: 5px 0;
             padding-right: 5px;
             width: 180px;
             box-sizing: border-box;
+            max-height: 300px; /* Maximum height for scrolling if many languages */
+            overflow-y: auto; /* Add scrolling for many languages */
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); /* Add shadow for better visibility */
         }
         .language-menu.visible {
             display: block;
@@ -549,6 +552,8 @@
         const languageMenu = document.querySelector('#languageMenu');
 
         languageButton.addEventListener('click', () => {
+            const buttonRect = languageButton.getBoundingClientRect();
+            languageMenu.style.top = (buttonRect.bottom + 5) + 'px'; // Position below button with 5px gap
             languageMenu.classList.toggle('visible');
         });
 

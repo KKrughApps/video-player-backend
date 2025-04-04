@@ -69,7 +69,13 @@ module.exports = (pool) => {
                 const fs = require('fs');
                 const path = require('path');
                 if (originalVideo.startsWith('videos/') || originalVideo.startsWith('/videos/')) {
-                    const localPath = path.join(__dirname, '../../', originalVideo.startsWith('/') ? originalVideo.substring(1) : originalVideo);
+                    // Get absolute path to the project root
+                    const rootDir = path.resolve(__dirname, '../../');
+                    // Construct absolute path to the video file
+                    const localPath = path.join(rootDir, originalVideo.startsWith('/') ? originalVideo.substring(1) : originalVideo);
+                    
+                    console.log(`Resolving video path: root=${rootDir}, originalPath=${originalVideo}, localPath=${localPath}`);
+                    
                     try {
                         const exists = fs.existsSync(localPath);
                         console.log(`Checking if local file exists at ${localPath}: ${exists}`);
