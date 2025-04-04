@@ -9,45 +9,125 @@ module.exports = (pool) => {
         try {
             console.log(`Getting video for animation ${id} in language ${lang}`);
             
-            const animation = await pool.query('SELECT * FROM animations WHERE id = $1', [id]);
+            // Query the database for animation, including language-specific video paths
+            const animation = await pool.query(`
+                SELECT 
+                    *, 
+                    CASE WHEN $1 = 'en' THEN englishVideoPath ELSE spanishVideoPath END as localizedVideoPath,
+                    CASE WHEN $1 = 'en' THEN englishVideoUrl ELSE spanishVideoUrl END as localizedVideoUrl
+                FROM animations 
+                WHERE id = $2
+            `, [lang, id]);
+            
             if (animation.rows.length === 0) {
                 console.log(`Animation ${id} not found`);
                 return res.status(404).json({ error: 'Animation not found' });
             }
-
-            // Try to find the processed video first
-            const { fileExistsInSpaces } = require('../utils/spaces');
-            const spacesKey = `videos/temp_video_${id}_${lang}_full.mp4`;
             
-            console.log(`Checking for processed video in Spaces: ${spacesKey}`);
-            let processedVideoExists = false;
+            const animationData = animation.rows[0];
+            console.log(`Found animation: ${animationData.name} (ID: ${id})`);
             
-            try {
-                // First check if the processed video exists in Spaces
-                processedVideoExists = await fileExistsInSpaces(spacesKey);
-                console.log(`Processed video exists in Spaces: ${processedVideoExists}`);
-            } catch (checkError) {
-                console.error(`Error checking if processed video exists: ${checkError.message}`);
-                // Continue with the function, treating it as if the file doesn't exist
+            // Try different video sources in order of preference
+            let videoUrl;
+            let videoSource = 'unknown';
+            
+            // 1. First try language-specific video URL (from DO Spaces)
+            if (animationData.localizedVideoUrl) {
+                videoUrl = animationData.localizedVideoUrl;
+                videoSource = 'spaces-localized';
+                console.log(`Using localized video URL from Spaces: ${videoUrl}`);
+            } 
+            // 2. Then try language-specific local path
+            else if (animationData.localizedVideoPath) {
+                // Check if the local file exists
+                const fs = require('fs');
+                try {
+                    const exists = fs.existsSync(animationData.localizedVideoPath);
+                    if (exists) {
+                        const localPath = animationData.localizedVideoPath;
+                        // Convert absolute path to relative URL
+                        if (localPath.includes('/videos/')) {
+                            const pathParts = localPath.split('/videos/');
+                            videoUrl = `/videos/${pathParts[pathParts.length - 1]}`;
+                        } else {
+                            videoUrl = `/${localPath}`;
+                        }
+                        videoSource = 'local-localized';
+                        console.log(`Using localized video from local path: ${videoUrl} (original: ${localPath})`);
+                    }
+                } catch (fsError) {
+                    console.error(`Error checking local localized file: ${fsError.message}`);
+                }
             }
             
-            let videoUrl;
-            
-            if (processedVideoExists) {
-                // Use the processed video from Spaces
-                videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${spacesKey}`;
-                console.log(`Serving processed video from Spaces: ${videoUrl}`);
-            } else {
-                // Try to use the original uploaded video
-                console.log('Processed video not found, checking for original video');
+            // 3. Try to find the processed video in Spaces
+            if (!videoUrl) {
+                const { fileExistsInSpaces } = require('../utils/spaces');
+                const spacesKey = `videos/temp_video_${id}_${lang}_full.mp4`;
                 
-                // The column name may be lowercase in Postgres
-                const originalVideo = animation.rows[0].videopath || animation.rows[0].videoPath;
+                console.log(`Checking for processed video in Spaces: ${spacesKey}`);
+                let processedVideoExists = false;
+                
+                try {
+                    // Check if the processed video exists in Spaces
+                    processedVideoExists = await fileExistsInSpaces(spacesKey);
+                    console.log(`Processed video exists in Spaces: ${processedVideoExists}`);
+                    
+                    if (processedVideoExists) {
+                        // Use the processed video from Spaces
+                        videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${spacesKey}`;
+                        videoSource = 'spaces-generated';
+                        console.log(`Serving processed video from Spaces: ${videoUrl}`);
+                        
+                        // Update the database with this URL
+                        if (lang === 'en') {
+                            await pool.query('UPDATE animations SET englishVideoUrl = $1 WHERE id = $2', [videoUrl, id]);
+                        } else {
+                            await pool.query('UPDATE animations SET spanishVideoUrl = $1 WHERE id = $2', [videoUrl, id]);
+                        }
+                    }
+                } catch (checkError) {
+                    console.error(`Error checking if processed video exists in Spaces: ${checkError.message}`);
+                }
+            }
+            
+            // 4. Check for local processed video
+            if (!videoUrl) {
+                const fs = require('fs');
+                const path = require('path');
+                const rootDir = path.resolve(__dirname, '../../');
+                const localProcessedPath = path.join(rootDir, 'videos', `video_${id}_${lang}_full.mp4`);
+                
+                console.log(`Checking for local processed video: ${localProcessedPath}`);
+                
+                try {
+                    const exists = fs.existsSync(localProcessedPath);
+                    if (exists) {
+                        videoUrl = `/videos/video_${id}_${lang}_full.mp4`;
+                        videoSource = 'local-generated';
+                        console.log(`Using local processed video: ${videoUrl}`);
+                        
+                        // Update the database with this path
+                        if (lang === 'en') {
+                            await pool.query('UPDATE animations SET englishVideoPath = $1 WHERE id = $2', [localProcessedPath, id]);
+                        } else {
+                            await pool.query('UPDATE animations SET spanishVideoPath = $1 WHERE id = $2', [localProcessedPath, id]);
+                        }
+                    }
+                } catch (fsError) {
+                    console.error(`Error checking local processed file: ${fsError.message}`);
+                }
+            }
+            
+            // 5. Finally, try the original video as a fallback
+            if (!videoUrl) {
+                console.log('No processed video found, checking for original video');
+                
+                const originalVideo = animationData.videopath || animationData.videoPath;
                 
                 console.log(`Original video path: ${originalVideo}`);
                 
                 if (!originalVideo) {
-                    // No video available
                     console.log('No video path found in database');
                     return res.status(404).json({ 
                         error: 'Video not found. The video may still be processing.',
@@ -63,9 +143,10 @@ module.exports = (pool) => {
                 } else {
                     videoUrl = originalVideo;
                 }
+                videoSource = 'original';
                 console.log(`Serving original video: ${videoUrl}`);
                 
-                // For debugging - check if file actually exists
+                // Check if file actually exists
                 const fs = require('fs');
                 const path = require('path');
                 if (originalVideo.startsWith('videos/') || originalVideo.startsWith('/videos/')) {
@@ -91,13 +172,25 @@ module.exports = (pool) => {
                 }
             }
             
+            if (!videoUrl) {
+                console.error(`No valid video URL found for animation ${id} in language ${lang}`);
+                return res.status(404).json({ 
+                    error: 'No valid video URL found. The video may still be processing.',
+                    status: 'PROCESSING'
+                });
+            }
+            
             // Add a cache-busting parameter to avoid browser caching
             const timestamp = Date.now();
             const urlWithCacheBusting = videoUrl.includes('?') 
                 ? `${videoUrl}&_t=${timestamp}` 
                 : `${videoUrl}?_t=${timestamp}`;
                 
-            res.json({ url: urlWithCacheBusting });
+            console.log(`Returning video URL: ${urlWithCacheBusting} (source: ${videoSource})`);
+            res.json({ 
+                url: urlWithCacheBusting,
+                source: videoSource 
+            });
         } catch (err) {
             console.error(`Error in /video/:id endpoint: ${err.message}`);
             res.status(500).json({ error: err.message });
