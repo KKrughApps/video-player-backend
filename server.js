@@ -18,8 +18,9 @@ app.use('/videos', express.static(path.join(__dirname, 'videos')));
 app.use('/public', express.static(path.join(__dirname, 'public')));
 app.use(session({ secret: 'your-secret-key', resave: false, saveUninitialized: false, cookie: { secure: false } }));
 
-// Import the job queue so that its process handler is attached
+// Import the job queue and worker to ensure job processing is initialized
 const videoQueue = require('./src/services/jobQueue');
+require('./src/services/worker');
 
 app.use('/admin', adminRoutes(pool));
 app.use('/api', apiRoutes(pool));

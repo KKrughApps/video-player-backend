@@ -14,6 +14,7 @@ function getS3Client() {
         
         if (!process.env.SPACES_ENDPOINT || !process.env.SPACES_KEY || !process.env.SPACES_SECRET) {
             console.warn('S3 credentials not properly configured. Check environment variables.');
+            throw new Error('Missing required Spaces credentials in environment variables');
         }
         
         const spacesEndpoint = new AWS.Endpoint(process.env.SPACES_ENDPOINT);
@@ -24,8 +25,10 @@ function getS3Client() {
             region: process.env.SPACES_REGION || 'nyc3',
         });
         
-        // Test the connection by listing buckets
-        console.log('Testing S3 connection...');
+        // Test the connection by listing buckets (asynchronously)
+        s3Client.listBuckets().promise()
+            .then(() => console.log('S3 connection test successful'))
+            .catch(err => console.error('S3 connection test failed:', err));
         
         return s3Client;
     } catch (error) {
@@ -37,7 +40,7 @@ function getS3Client() {
 // Get S3 client - create once to avoid repeated initialization
 const s3 = getS3Client();
 
-async function uploadToSpaces(filePath, key) {
+async function uploadToSpaces(filePath, key, retryCount = 3) {
     console.log(`Starting upload to DigitalOcean Spaces: ${filePath} -> ${key}`);
     
     try {
@@ -73,35 +76,35 @@ async function uploadToSpaces(filePath, key) {
         const fileStats = await fs.stat(filePath);
         console.log(`File stats: size=${fileStats.size} bytes, created=${fileStats.birthtime}`);
         
-        // Read file content
-        console.log(`Reading file content: ${filePath}`);
-        const fileContent = await fs.readFile(filePath);
-        console.log(`File content read successfully: ${fileContent.length} bytes`);
-        
-        // Set content type based on file extension
-        let contentType = 'video/mp4';
-        if (filePath.toLowerCase().endsWith('.mp3')) {
-            contentType = 'audio/mpeg';
-        }
+        // Determine content type based on file extension
+        const path = require('path');
+        const extension = path.extname(filePath).toLowerCase();
+        const contentTypeMap = {
+            '.mp4': 'video/mp4',
+            '.mov': 'video/quicktime',
+            '.avi': 'video/x-msvideo',
+            '.mp3': 'audio/mpeg',
+            '.wav': 'audio/wav'
+        };
+        const contentType = contentTypeMap[extension] || 'application/octet-stream';
         
         console.log(`Uploading to Spaces: bucket=${process.env.SPACES_BUCKET}, key=${key}, contentType=${contentType}`);
+        
+        // Create a read stream instead of loading the entire file into memory
+        const fs_normal = require('fs');
+        const fileStream = fs_normal.createReadStream(filePath);
+        fileStream.on('error', function(err) {
+            console.error(`Error reading file stream: ${err}`);
+            throw err;
+        });
         
         const uploadParams = {
             Bucket: process.env.SPACES_BUCKET,
             Key: key,
-            Body: fileContent,
+            Body: fileStream,
             ACL: 'public-read',
             ContentType: contentType,
         };
-        
-        // Log upload attempt (exclude file content)
-        console.log('Upload params:', JSON.stringify({
-            Bucket: uploadParams.Bucket,
-            Key: uploadParams.Key,
-            ContentType: uploadParams.ContentType,
-            ACL: uploadParams.ACL,
-            BodySize: fileContent.length
-        }, null, 2));
         
         // Test bucket access first
         try {
@@ -115,16 +118,37 @@ async function uploadToSpaces(filePath, key) {
         
         console.log(`Starting S3 upload to ${uploadParams.Bucket}/${uploadParams.Key}...`);
         
+        // Set up upload with progress tracking
+        const managedUpload = s3.upload(uploadParams);
+        
+        // Add progress tracking
+        managedUpload.on('httpUploadProgress', (progress) => {
+            const percentUploaded = Math.round((progress.loaded / progress.total) * 100);
+            console.log(`Upload progress: ${percentUploaded}% (${progress.loaded}/${progress.total} bytes)`);
+        });
+        
         // Perform the actual upload
-        const uploadResult = await s3.upload(uploadParams).promise();
+        const uploadResult = await managedUpload.promise();
         console.log('Upload successful:', JSON.stringify(uploadResult, null, 2));
         
-        const videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+        // Construct the URL using the correct pattern
+        let videoUrl;
+        if (process.env.SPACES_CDN_ENDPOINT) {
+            // Use CDN URL if available
+            videoUrl = `https://${process.env.SPACES_CDN_ENDPOINT}/${key}`;
+        } else {
+            // Use standard Spaces URL
+            videoUrl = `https://${process.env.SPACES_BUCKET}.${process.env.SPACES_ENDPOINT}/${key}`;
+        }
         console.log(`Generated public URL: ${videoUrl}`);
         
+        // Verify URL is accessible
         try {
             console.log(`Verifying public access: ${videoUrl}`);
-            const response = await fetch(videoUrl, { method: 'HEAD' });
+            const response = await fetch(videoUrl, { 
+                method: 'HEAD',
+                timeout: 5000 // 5 second timeout
+            });
             if (!response.ok) {
                 console.warn(`File uploaded but not publicly accessible: ${videoUrl}, status=${response.status}`);
             } else {
@@ -132,6 +156,7 @@ async function uploadToSpaces(filePath, key) {
             }
         } catch (fetchError) {
             console.warn(`Could not verify file accessibility: ${fetchError.message}`);
+            // Don't fail the upload just because verification failed
         }
         
         // Log success
@@ -157,9 +182,18 @@ async function uploadToSpaces(filePath, key) {
             filePath,
             key,
             status: 'failed',
-            error: error.message
+            error: error.message,
+            retryCount
         };
         console.log('UPLOAD_LOG:', JSON.stringify(errorLog));
+        
+        // Implement retry logic
+        if (retryCount > 0) {
+            console.log(`Retrying upload (${retryCount} attempts left)...`);
+            // Wait 2 seconds before retrying
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return uploadToSpaces(filePath, key, retryCount - 1);
+        }
         
         throw error;
     }

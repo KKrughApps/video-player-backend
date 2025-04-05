@@ -234,6 +234,12 @@ module.exports = (pool) => {
           videoPath,
           voiceoverText,
           originalDuration: videoDuration
+        }, {
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 5000
+          }
         });
 
         res.redirect('/admin/dashboard');

@@ -1,5 +1,4 @@
 const Bull = require('bull');
-const { generateNarratedVideos } = require('./video');
 
 // Configure the Bull queue with Redis connection details from environment variables
 const videoQueue = new Bull('videoQueue', {
@@ -10,17 +9,15 @@ const videoQueue = new Bull('videoQueue', {
   }
 });
 
-// Attach a process handler so that jobs are processed
-videoQueue.process(async (job) => {
-  const { animationId, videoPath, voiceoverText, originalDuration } = job.data;
-  console.log(`Processing job #${job.id} for animation ${animationId}`);
-  try {
-    await generateNarratedVideos(animationId, videoPath, voiceoverText, originalDuration);
-    console.log(`Job #${job.id} complete for animation ${animationId}`);
-  } catch (error) {
-    console.error(`Error processing job #${job.id}:`, error);
-    throw error;
-  }
+// Set up error and event handlers
+videoQueue.on('error', (error) => {
+  console.error('Bull Queue Error:', error);
 });
+
+videoQueue.on('active', (job) => {
+  console.log(`Job ${job.id} is now active`);
+});
+
+// Note: Processing logic is defined in worker.js to avoid duplicate processing
 
 module.exports = videoQueue;

@@ -16,7 +16,11 @@ CREATE TABLE IF NOT EXISTS animations (
     reminder TEXT,
     twoSided BOOLEAN DEFAULT FALSE,
     originalDuration REAL,
-    paired_animation_id INTEGER
+    paired_animation_id INTEGER,
+    englishvideopath TEXT,
+    englishvideourl TEXT,
+    spanishvideopath TEXT,
+    spanishvideourl TEXT
 );`;
 
 // No default animations - database will start empty
