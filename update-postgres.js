@@ -6,16 +6,41 @@ const { parse } = require('pg-connection-string');
 require('dotenv').config();
 
 const dbConfig = parse(process.env.DATABASE_URL);
-dbConfig.ssl = { rejectUnauthorized: false };
+dbConfig.ssl = { 
+  rejectUnauthorized: false,
+  ca: process.env.DATABASE_CA
+};
 const pool = new Pool(dbConfig);
 
 // Add language-specific video fields
 const updateTableSQL = `
-ALTER TABLE animations 
-ADD COLUMN IF NOT EXISTS englishVideoPath TEXT,
-ADD COLUMN IF NOT EXISTS englishVideoUrl TEXT,
-ADD COLUMN IF NOT EXISTS spanishVideoPath TEXT,
-ADD COLUMN IF NOT EXISTS spanishVideoUrl TEXT;
+DO $$
+BEGIN
+    BEGIN
+        ALTER TABLE animations ADD COLUMN englishvideopath TEXT;
+    EXCEPTION
+        WHEN duplicate_column THEN RAISE NOTICE 'Column englishvideopath already exists';
+    END;
+    
+    BEGIN
+        ALTER TABLE animations ADD COLUMN englishvideourl TEXT;
+    EXCEPTION
+        WHEN duplicate_column THEN RAISE NOTICE 'Column englishvideourl already exists';
+    END;
+    
+    BEGIN
+        ALTER TABLE animations ADD COLUMN spanishvideopath TEXT;
+    EXCEPTION
+        WHEN duplicate_column THEN RAISE NOTICE 'Column spanishvideopath already exists';
+    END;
+    
+    BEGIN
+        ALTER TABLE animations ADD COLUMN spanishvideourl TEXT;
+    EXCEPTION
+        WHEN duplicate_column THEN RAISE NOTICE 'Column spanishvideourl already exists';
+    END;
+END
+$$;
 `;
 
 async function updateDatabase() {

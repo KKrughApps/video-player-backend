@@ -10,14 +10,8 @@ module.exports = (pool) => {
             console.log(`Getting video for animation ${id} in language ${lang}, fallback: ${fallback}`);
             
             // Query the database for animation, including language-specific video paths
-            const animation = await pool.query(`
-                SELECT 
-                    *, 
-                    CASE WHEN $1 = 'en' THEN englishVideoPath ELSE spanishVideoPath END as localizedVideoPath,
-                    CASE WHEN $1 = 'en' THEN englishVideoUrl ELSE spanishVideoUrl END as localizedVideoUrl
-                FROM animations 
-                WHERE id = $2
-            `, [lang, id]);
+            // Use a simpler query first to avoid column errors
+            const animation = await pool.query(`SELECT * FROM animations WHERE id = $1`, [id]);
             
             if (animation.rows.length === 0) {
                 console.log(`Animation ${id} not found`);
@@ -30,34 +24,24 @@ module.exports = (pool) => {
             // Try different video sources in order of preference
             let videoUrl;
             let videoSource = 'unknown';
+            const fs = require('fs');
+            const path = require('path');
             
-            // 1. First try language-specific video URL (from DO Spaces)
-            if (animationData.localizedVideoUrl) {
-                videoUrl = animationData.localizedVideoUrl;
-                videoSource = 'spaces-localized';
-                console.log(`Using localized video URL from Spaces: ${videoUrl}`);
-            } 
-            // 2. Then try language-specific local path
-            else if (animationData.localizedVideoPath) {
-                // Check if the local file exists
-                const fs = require('fs');
-                try {
-                    const exists = fs.existsSync(animationData.localizedVideoPath);
-                    if (exists) {
-                        const localPath = animationData.localizedVideoPath;
-                        // Convert absolute path to relative URL
-                        if (localPath.includes('/videos/')) {
-                            const pathParts = localPath.split('/videos/');
-                            videoUrl = `/videos/${pathParts[pathParts.length - 1]}`;
-                        } else {
-                            videoUrl = `/${localPath}`;
-                        }
-                        videoSource = 'local-localized';
-                        console.log(`Using localized video from local path: ${videoUrl} (original: ${localPath})`);
-                    }
-                } catch (fsError) {
-                    console.error(`Error checking local localized file: ${fsError.message}`);
+            // First check if we have the processed videos in the videos directory
+            const videosDir = path.join(__dirname, '../../videos');
+            const processedVideoFile = `video_${id}_${lang}_full.mp4`;
+            const localProcessedPath = path.join(videosDir, processedVideoFile);
+            
+            console.log(`Checking for processed video at: ${localProcessedPath}`);
+            try {
+                const exists = fs.existsSync(localProcessedPath);
+                if (exists) {
+                    videoUrl = `/videos/${processedVideoFile}`;
+                    videoSource = 'local-processed';
+                    console.log(`Found processed video locally: ${videoUrl}`);
                 }
+            } catch (fsError) {
+                console.error(`Error checking local processed file: ${fsError.message}`);
             }
             
             // 3. Try to find the processed video in Spaces

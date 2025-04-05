@@ -159,7 +159,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
         try {
           const updateQuery = `
             UPDATE animations
-            SET ${language === 'en' ? 'englishVideoPath' : 'spanishVideoPath'} = $1
+            SET ${language === 'en' ? 'englishvideopath' : 'spanishvideopath'} = $1
             WHERE id = $2
           `;
           await db.query(updateQuery, [localFinalPath, animationId]);
@@ -182,7 +182,7 @@ async function generateNarratedVideos(animationId, videoPath, voiceoverText, ori
             try {
               const updateQuery = `
                 UPDATE animations
-                SET ${language === 'en' ? 'englishVideoUrl' : 'spanishVideoUrl'} = $1
+                SET ${language === 'en' ? 'englishvideourl' : 'spanishvideourl'} = $1
                 WHERE id = $2
               `;
               await db.query(updateQuery, [spacesUrl, animationId]);
