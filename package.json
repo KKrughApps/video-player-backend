@@ -27,6 +27,9 @@
   ],
   "author": "",
   "license": "MIT",
+  "engines": {
+    "node": "16.x"
+  },
   "dependencies": {
     "@fastify/cors": "^8.0.0",
     "@fastify/multipart": "^7.0.0",

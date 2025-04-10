@@ -1,0 +1,12 @@
+name: video-player-backend
+region: nyc
+services:
+- dockerfile_path: Dockerfile
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: KKrughApps/video-player-backend
+  http_port: 10000
+  name: video-player-backend
+  instance_count: 1
+  instance_size_slug: basic-xxs
