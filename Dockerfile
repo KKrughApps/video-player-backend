@@ -29,4 +29,4 @@ RUN npm run build
 EXPOSE 10000
 
 # Set the command to run
-CMD ["npm", "start"]
+CMD ["./run.sh"]
