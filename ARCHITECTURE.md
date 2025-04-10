@@ -190,21 +190,26 @@ To run the system in development mode:
 The project is deployed to Digital Ocean App Platform:
 
 1. GitHub Integration:
-   - Repository: video-narration-service (private)
+   - Repository: https://github.com/KKrughApps/video-player-backend
    - Branch: main
+   - Auto-deployment on push: Enabled
 
 2. Environment Configuration:
    - Production environment variables are set directly in Digital Ocean
    - Refer to .env.example for required variables
+   - Docker environment setup via docker.env
 
-3. App Components:
-   - Web Service: Runs the main application
-   - Worker: Handles background processing jobs
+3. App Configuration:
+   - Single containerized application (via Dockerfile)
+   - Dedicated health check endpoint on port 10000 (/health)
+   - Combined services (upload, processor, delivery) in a single container
+   - Instance Size: Basic-XXS (512MB RAM / 1 vCPU)
 
 4. Resource Configuration:
-   - Database connection to video-player-db
+   - Database connection to video-player-db (PostgreSQL)
    - Redis connection to db-redis-nyc3-video-player
    - Storage connection to video-player-narrations Spaces bucket
+   - Built-in SSL/TLS support via Digital Ocean
 
 ## Next Architecture Improvements
 

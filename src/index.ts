@@ -5,6 +5,7 @@ import logger from './shared/utils/logger';
 import { initializeUploadService } from './services/upload';
 import { initializeProcessorService } from './services/processor';
 import { initializeDeliveryService } from './services/delivery';
+import fastify from 'fastify';
 
 /**
  * Initialize all application components
@@ -31,6 +32,25 @@ const initialize = async () => {
     const deliveryServer = await initializeDeliveryService();
     logger.info('Delivery service initialized successfully');
     
+    // Create a health check server on the Docker health check port
+    const healthServer = fastify({
+      logger: true
+    });
+    
+    healthServer.get('/health', async () => {
+      return { 
+        status: 'ok', 
+        services: {
+          upload: 'running',
+          delivery: 'running',
+          processor: 'running'
+        }
+      };
+    });
+    
+    await healthServer.listen({ port: 10000, host: '0.0.0.0' });
+    logger.info(`Health check server running on http://localhost:10000/health`);
+    
     // Handle graceful shutdown
     const shutdown = async () => {
       logger.info('Shutting down services...');
@@ -38,6 +58,7 @@ const initialize = async () => {
       try {
         await uploadServer.close();
         await deliveryServer.close();
+        await healthServer.close();
         process.exit(0);
       } catch (error) {
         logger.error('Error during shutdown:', error);

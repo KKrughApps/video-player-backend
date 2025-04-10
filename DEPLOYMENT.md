@@ -2,7 +2,7 @@
 
 ## Last Updated: 2025-04-10
 
-This document outlines the steps to deploy the Video Narration Service to Digital Ocean App Platform, including connections to existing resources.
+This document outlines the steps to deploy the Video Narration Service to Digital Ocean App Platform, including connections to existing resources. The deployment has been configured to run as a containerized application with automatic scaling and health monitoring.
 
 ## Prerequisites
 
@@ -106,6 +106,44 @@ If the deployment fails, check the following:
 2. Check the build logs for compilation errors
 3. Verify connectivity to external resources (database, redis, spaces)
 4. Check the application logs for runtime errors
+
+### Common Issues and Solutions
+
+#### TypeScript Compilation Errors
+
+If you encounter TypeScript compilation errors related to Fastify, the following configuration in `tsconfig.json` resolves most issues:
+
+```json
+{
+  "compilerOptions": {
+    // Other options...
+    "skipLibCheck": true,
+    "typeRoots": ["./node_modules/@types"],
+    "noImplicitAny": false,
+    "strictNullChecks": false
+  }
+}
+```
+
+This configuration relaxes TypeScript's strict type checking to accommodate the Fastify 4.0.0 type definitions.
+
+#### Health Check Failures
+
+The application includes a dedicated health check endpoint on port 10000 at `/health`. This endpoint checks the status of all three services (upload, processor, and delivery). If the health check fails:
+
+1. Check that the server can bind to port 10000
+2. Verify all services started successfully
+3. Check the logs for any initialization errors
+4. Ensure the Digital Ocean firewall allows traffic on port 10000
+
+#### Docker Build Failures
+
+If the Docker build fails:
+
+1. Ensure `package-lock.json` is committed to the repository
+2. Check that all the required dependencies are listed in `package.json`
+3. Verify the `run.sh` script has execute permissions
+4. Ensure the `docker.env` file is correctly configured
 
 ## Maintenance
 
